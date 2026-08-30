@@ -1,0 +1,26 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      # The end-to-end section drives a real browser. Ubuntu runners ship
+      # Chrome already; test/run.js skips that section if it cannot find one.
+      - run: npm test
+        env:
+          CHROME_PATH: /usr/bin/google-chrome

@@ -1,0 +1,49 @@
+<!doctype html>
+<meta charset="utf-8" />
+<style>
+  :root { color-scheme: dark; }
+  body { width: 268px; margin: 0; padding: 12px; background: #14161c; color: #e8eaf0;
+         font: 12px/1.5 ui-sans-serif, -apple-system, system-ui, sans-serif; }
+  h1 { margin: 0 0 9px; font-size: 12px; font-weight: 650; letter-spacing: .01em; }
+  .card { background: #0e1015; border: 1px solid #262b35; border-radius: 8px; padding: 9px 10px; margin-bottom: 9px; }
+  .row { display: flex; gap: 8px; align-items: baseline; }
+  .k { color: #8b93a7; min-width: 52px; }
+  .v { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #f0b849; margin-right: 5px; }
+  .dot.on { background: #4ade80; }
+  .dot.off { background: #f87171; }
+  button { width: 100%; padding: 7px; margin-bottom: 6px; font: inherit; font-size: 12px; font-weight: 600;
+           border-radius: 7px; border: 1px solid #333a49; background: #1c2029; color: #e8eaf0; cursor: pointer; }
+  button:hover { background: #252a35; }
+  button.primary { background: #4f6bff; border-color: #4f6bff; color: #fff; }
+  button.primary:hover { background: #6079ff; }
+  .hint { color: #8b93a7; }
+  code { background: #22262f; border-radius: 4px; padding: 1px 4px; font-family: ui-monospace, Menlo, monospace; }
+  kbd { background: #22262f; border: 1px solid #333a49; border-bottom-width: 2px; border-radius: 4px;
+        padding: 0 4px; font-family: inherit; font-size: 10px; }
+  .seg { display: flex; gap: 3px; margin: 2px 0 0; }
+  .seg button { flex: 1; width: auto; margin: 0; padding: 4px 0; font-size: 11px; font-weight: 550;
+                border-radius: 5px; text-transform: capitalize; }
+  .seg button.sel { background: #4f6bff; border-color: #4f6bff; color: #fff; }
+  .seg button.sel:hover { background: #6079ff; }
+  .modehint { color: #8b93a7; margin-top: 7px; font-size: 11px; }
+</style>
+<h1>UI Grab</h1>
+<div class="card" id="status">
+  <div class="row"><span class="k"><span class="dot" id="dot"></span>bridge</span>
+    <span class="v" id="bridge">checking…</span></div>
+  <div class="row" id="rootrow" hidden><span class="k">project</span>
+    <span class="v mono" id="root"></span></div>
+  <div class="row" id="pendrow" hidden><span class="k">in queue</span>
+    <span class="v" id="pending"></span></div>
+</div>
+<div class="card" id="modecard" hidden>
+  <div class="k" style="margin-bottom:2px">when you hit Send</div>
+  <div class="seg" id="seg"></div>
+  <div class="modehint" id="modehint"></div>
+</div>
+<button class="primary" id="pick">Start picking</button>
+<button id="recheck">Re-check bridge</button>
+<div class="hint" id="hint"></div>
+<script src="popup.js"></script>

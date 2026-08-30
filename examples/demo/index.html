@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ui-grab demo — checkout</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main class="checkout">
+      <h1 class="checkout-title">Review your order</h1>
+      <p class="checkout-sub">Two items · ships Tuesday</p>
+
+      <ul class="line-items">
+        <li class="line-item"><span class="li-name">Anodized desk lamp</span><span class="li-price">$148.00</span></li>
+        <li class="line-item"><span class="li-name">Linen shade, walnut</span><span class="li-price">$62.00</span></li>
+      </ul>
+
+      <div class="totals">
+        <div class="total-row"><span>Subtotal</span><span>$210.00</span></div>
+        <div class="total-row"><span>Shipping</span><span>$12.00</span></div>
+        <div class="total-row total-row--grand"><span>Total</span><span>$222.00</span></div>
+      </div>
+
+      <button id="place-order" class="btn btn-primary">Place order</button>
+      <button class="btn btn-ghost">Back to cart</button>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

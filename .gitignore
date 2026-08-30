@@ -1,0 +1,15 @@
+node_modules
+dist
+
+# Per-machine Claude Code settings — .claude/settings.json and
+# .claude/commands/ are meant to be committed, this one is not.
+.claude/settings.local.json
+
+# Pending picks and their crops. .ui-grab/config.json is the one file in here
+# worth committing — it is the team's automation mode.
+.ui-grab/queue.json
+.ui-grab/queue.blocks.json
+.ui-grab/shots/
+
+.DS_Store
+*.log

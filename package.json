@@ -1,0 +1,58 @@
+{
+  "name": "vite-plugin-ui-grab",
+  "version": "0.1.0",
+  "description": "Select elements in your running app, comment on them, batch them, and send them to Claude Code.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Yash Kakade",
+  "homepage": "https://github.com/ykakade/ui-grab#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ykakade/ui-grab.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ykakade/ui-grab/issues"
+  },
+  "keywords": [
+    "vite-plugin",
+    "claude-code",
+    "ai",
+    "devtools",
+    "ui",
+    "dx"
+  ],
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "main": "./src/index.js",
+  "files": [
+    "src",
+    "bin",
+    "hooks",
+    "bridge",
+    "extension",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "ui-grab-install": "./bin/install-claude.js",
+    "ui-grab-bridge": "./bin/ui-grab-bridge.js"
+  },
+  "scripts": {
+    "test": "node test/automation.js && node test/run.js",
+    "demo": "vite examples/demo",
+    "site": "node site/build.mjs"
+  },
+  "peerDependencies": {
+    "vite": ">=5"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

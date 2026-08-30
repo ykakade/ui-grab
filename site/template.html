@@ -1,0 +1,797 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A Vite dev plugin: click elements in your running app, say what should change, and send the batch to Claude Code with the source line already attached.">
+<title>ui-grab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  /* The palette is the picker's own overlay chrome — the periwinkle highlight
+     box, the indigo primary, the charcoal dock — so the page is dressed in the
+     thing it is describing. */
+  :root {
+    color-scheme: light;
+    --ground: #f4f6fa;
+    --surface: #ffffff;
+    --sunk: #eaeef6;
+    --ink: #12141a;
+    --muted: #5c6478;
+    --rule: #dde2ec;
+    --rule-soft: #e8ecf3;
+    --accent: #4055e6;
+    --accent-ink: #ffffff;
+    --hi: #7c9cff;
+    --hi-ink: #0b1020;
+    --shell: #0e1015;
+    --shell-ink: #e8eaf0;
+    --shell-muted: #8b93a7;
+    --shell-rule: #262b35;
+    --shadow: 0 1px 2px rgba(18, 20, 26, .05), 0 12px 32px -12px rgba(18, 20, 26, .14);
+    --display: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+    --body: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #0b0d12;
+      --surface: #14161c;
+      --sunk: #0e1015;
+      --ink: #e8eaf0;
+      --muted: #8b93a7;
+      --rule: #262b35;
+      --rule-soft: #1d212a;
+      --accent: #7c93ff;
+      --accent-ink: #0b1020;
+      --hi: #7c9cff;
+      --hi-ink: #0b1020;
+      --shell: #05070b;
+      --shell-ink: #e8eaf0;
+      --shell-muted: #8b93a7;
+      --shell-rule: #1d212a;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 32px -12px rgba(0, 0, 0, .7);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #0b0d12;
+    --surface: #14161c;
+    --sunk: #0e1015;
+    --ink: #e8eaf0;
+    --muted: #8b93a7;
+    --rule: #262b35;
+    --rule-soft: #1d212a;
+    --accent: #7c93ff;
+    --accent-ink: #0b1020;
+    --hi: #7c9cff;
+    --hi-ink: #0b1020;
+    --shell: #05070b;
+    --shell-ink: #e8eaf0;
+    --shell-muted: #8b93a7;
+    --shell-rule: #1d212a;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 32px -12px rgba(0, 0, 0, .7);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font: 400 16px/1.6 var(--body);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+
+  .wrap { width: min(1080px, calc(100% - 48px)); margin-inline: auto; }
+  @media (max-width: 620px) { .wrap { width: calc(100% - 32px); } }
+
+  /* The picker's measurement label, reused as the page's section marker. */
+  .chip {
+    display: inline-block; background: var(--hi); color: var(--hi-ink);
+    font: 600 11px/1.5 var(--mono); letter-spacing: .04em; text-transform: lowercase;
+    padding: 2px 7px; border-radius: 4px;
+  }
+
+  /* ---------------------------------------------------------------- header */
+  header {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--ground) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .bar { display: flex; align-items: center; gap: 14px; height: 56px; }
+  .mark {
+    font: 700 16px/1 var(--display); letter-spacing: -.02em; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .mark svg { display: block; }
+  .bar nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+  .bar nav a {
+    font: 500 13.5px/1 var(--body); color: var(--muted); text-decoration: none;
+    padding: 7px 10px; border-radius: 7px;
+  }
+  .bar nav a:hover { color: var(--ink); background: var(--sunk); }
+
+  /* ------------------------------------------------------------------ hero */
+  .hero { padding: 68px 0 28px; }
+  h1 {
+    margin: 0; font: 700 clamp(38px, 6.2vw, 62px)/1.02 var(--display);
+    letter-spacing: -.035em; text-wrap: balance; max-width: 15ch;
+  }
+  h1 em { font-style: normal; color: var(--accent); }
+  .lede {
+    margin: 20px 0 0; max-width: 60ch; font-size: 17.5px; color: var(--muted);
+    text-wrap: pretty;
+  }
+  .lede strong { color: var(--ink); font-weight: 600; }
+  .cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 28px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; text-decoration: none;
+    font: 600 14px/1 var(--body); padding: 11px 16px; border-radius: 9px;
+    border: 1px solid var(--rule); background: var(--surface); color: var(--ink);
+    transition: background .12s ease, border-color .12s ease, transform .12s ease;
+  }
+  .btn:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--rule)); }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.primary:hover { background: color-mix(in srgb, var(--accent) 86%, black); }
+  .install {
+    display: inline-flex; align-items: center; gap: 10px;
+    font: 500 13.5px/1 var(--mono); color: var(--muted);
+    background: var(--surface); border: 1px solid var(--rule);
+    padding: 11px 14px; border-radius: 9px;
+  }
+  .install b { color: var(--ink); font-weight: 500; }
+  .install button {
+    font: 500 11px/1 var(--mono); color: var(--muted); background: none;
+    border: 0; cursor: pointer; padding: 0; letter-spacing: .05em; text-transform: uppercase;
+  }
+  .install button:hover { color: var(--accent); }
+
+  /* ------------------------------------------------------------------ demo */
+  section { padding: 44px 0; }
+  .shead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  h2 {
+    margin: 0; font: 600 26px/1.2 var(--display); letter-spacing: -.022em;
+  }
+  .snote { margin: 8px 0 22px; color: var(--muted); max-width: 68ch; font-size: 15px; }
+  .snote code, .inline-code {
+    font: 500 13px/1 var(--mono); background: var(--sunk);
+    padding: 2px 5px; border-radius: 4px; color: var(--ink);
+  }
+
+  .split { display: grid; gap: 16px; grid-template-columns: 1fr; align-items: start; }
+  @media (min-width: 980px) {
+    .split { grid-template-columns: 1.05fr .95fr; }
+    .out { display: flex; flex-direction: column; }
+    .out #payload-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .out #payload { flex: 1; min-height: 0; max-height: none; }
+    .out .empty { flex: 1; justify-content: center; }
+  }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 12px; box-shadow: var(--shadow); overflow: hidden;
+  }
+  .phead {
+    display: flex; align-items: center; gap: 10px; padding: 10px 13px;
+    border-bottom: 1px solid var(--rule-soft);
+    font: 500 12px/1 var(--mono); color: var(--muted);
+  }
+  .phead .grow { flex: 1; }
+  .dots { display: flex; gap: 5px; }
+  .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--rule); display: block; }
+  .phead button {
+    font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .05em;
+    background: none; border: 1px solid var(--rule); color: var(--muted);
+    padding: 5px 9px; border-radius: 6px; cursor: pointer;
+  }
+  .phead button:hover { color: var(--ink); border-color: var(--muted); }
+
+  #stage { display: block; width: 100%; height: 520px; border: 0; background: #fff; }
+
+  .steps {
+    display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 11px 13px;
+    border-top: 1px solid var(--rule-soft); font-size: 13px; color: var(--muted);
+  }
+  .steps span { display: inline-flex; align-items: center; gap: 6px; }
+  .steps kbd {
+    font: 500 11px/1.6 var(--mono); background: var(--sunk); color: var(--ink);
+    border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px;
+  }
+
+  /* payload */
+  .out { background: var(--shell); color: var(--shell-ink); }
+  .out .phead { border-bottom-color: var(--shell-rule); color: var(--shell-muted); }
+  .out .phead button { border-color: var(--shell-rule); color: var(--shell-muted); }
+  .out .phead button:hover { color: var(--shell-ink); border-color: var(--shell-muted); }
+  .out .dots i { background: var(--shell-rule); }
+  #payload {
+    margin: 0; padding: 14px; overflow: auto; max-height: 520px;
+    font: 400 12.5px/1.7 var(--mono); tab-size: 2;
+  }
+  #payload .k { color: #9db4ff; }
+  #payload .s { color: #86efac; }
+  #payload .n { color: #fcd34d; }
+  #payload .p { color: var(--shell-muted); }
+  .empty {
+    padding: 40px 22px; color: var(--shell-muted); font-size: 14px; line-height: 1.65;
+    display: flex; flex-direction: column; gap: 10px; align-items: flex-start;
+  }
+  .empty b { color: var(--shell-ink); font-weight: 600; }
+  .empty .chip { opacity: .9; }
+
+  details.src { margin-top: 16px; }
+  details.src > summary {
+    cursor: pointer; font: 500 13px/1 var(--body); color: var(--muted);
+    padding: 10px 13px; border: 1px solid var(--rule); border-radius: 10px;
+    background: var(--surface); list-style: none; display: flex; gap: 8px; align-items: center;
+  }
+  details.src > summary::-webkit-details-marker { display: none; }
+  details.src > summary::before { content: '▸'; font-size: 11px; color: var(--muted); }
+  details.src[open] > summary::before { content: '▾'; }
+  details.src > summary:hover { color: var(--ink); }
+  .srcbody {
+    margin-top: 8px; border: 1px solid var(--rule); border-radius: 10px;
+    overflow: auto; max-height: 340px; background: var(--surface);
+  }
+  .srcbody pre { margin: 0; padding: 12px 0; font: 400 12.5px/1.75 var(--mono); }
+  .srcbody .ln { display: flex; gap: 14px; padding: 0 14px; white-space: pre; }
+  .srcbody .ln > i {
+    color: var(--muted); font-style: normal; width: 2.2ch; text-align: right;
+    flex: none; font-variant-numeric: tabular-nums; user-select: none;
+  }
+  .srcbody .ln.hit { background: color-mix(in srgb, var(--hi) 20%, transparent); }
+  .srcbody .ln.hit > i { color: var(--ink); font-weight: 600; }
+
+  /* --------------------------------------------------------------- then what */
+  pre.term {
+    margin: 0; white-space: pre;
+    background: var(--shell); color: var(--shell-ink); border: 1px solid var(--shell-rule);
+    border-radius: 12px; padding: 18px 20px; overflow-x: auto;
+    font: 400 13px/1.85 var(--mono); box-shadow: var(--shadow);
+  }
+  .term .u { color: var(--hi); }
+  .term .c { color: var(--shell-muted); }
+  .term .g { color: #86efac; }
+
+  .cards { display: grid; gap: 14px; grid-template-columns: 1fr; margin-top: 24px; }
+  @media (min-width: 760px) { .cards { grid-template-columns: repeat(3, 1fr); } }
+  .card {
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 12px;
+    padding: 18px 18px 20px;
+  }
+  .card h3 {
+    margin: 12px 0 7px; font: 600 15.5px/1.3 var(--display); letter-spacing: -.012em;
+  }
+  .card p { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.65; }
+  .card p + p { margin-top: 9px; }
+
+  table.modes { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }
+  table.modes th, table.modes td {
+    text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+  table.modes th {
+    font: 600 11px/1.5 var(--mono); text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted);
+  }
+  table.modes td:first-child { font: 500 13px/1.6 var(--mono); color: var(--accent); white-space: nowrap; }
+  table.modes td { color: var(--muted); }
+  table.modes tr:last-child td { border-bottom: 0; }
+
+  /* ---------------------------------------------------------------- footer */
+  footer {
+    border-top: 1px solid var(--rule-soft); margin-top: 40px; padding: 32px 0 56px;
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+    font-size: 13.5px; color: var(--muted);
+  }
+  footer .grow { flex: 1; }
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { color: var(--ink); text-decoration: underline; }
+  .hr { height: 1px; background: var(--rule-soft); border: 0; margin: 0; }
+</style>
+
+<header>
+  <div class="wrap bar">
+    <a class="mark" href="#top">
+      <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" stroke="#7c9cff" stroke-width="1.6"/>
+        <path d="M8.6 8.2 14 10.2l-2.2.9-.9 2.2-2.3-5.1Z" fill="#4055e6"/>
+      </svg>
+      ui-grab
+    </a>
+    <nav>
+      <a href="#demo">Demo</a>
+      <a href="#next">In Claude Code</a>
+      <a href="https://github.com/ykakade/ui-grab">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap hero">
+    <h1>Point at it. Say <em>what's wrong</em>.</h1>
+    <p class="lede">
+      A Vite dev plugin. Click elements in your running app, type what should change,
+      batch them up, hit Send — and Claude Code picks up the batch with
+      <strong>the file and line each one probably lives on already attached</strong>.
+      No extension, no daemon, no MCP server.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/ykakade/ui-grab">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        View on GitHub
+      </a>
+      <span class="install"><b>npm i -D vite-plugin-ui-grab</b><button id="copy-install">copy</button></span>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <section id="demo">
+      <div class="shead"><span class="chip">demo</span><h2>The real picker, running right here</h2></div>
+      <p class="snote">
+        The frame below is a throwaway checkout page with <code>extension/picker.js</code> —
+        the same file the plugin serves — injected into it. Hover to highlight, click to select,
+        type a change and press <span class="inline-code">Enter</span>. Add two or three, then hit
+        <strong>Send</strong>. Instead of writing to a queue file, this page shows you the payload
+        that would have landed in it.
+      </p>
+
+      <div class="split">
+        <div class="panel">
+          <div class="phead">
+            <span class="dots"><i></i><i></i><i></i></span>
+            <span>localhost:5173</span>
+            <span class="grow"></span>
+            <button id="restart">Reset</button>
+          </div>
+          <iframe id="stage" title="ui-grab demo app"></iframe>
+          <div class="steps">
+            <span><kbd>hover</kbd> highlight</span>
+            <span><kbd>click</kbd> select</span>
+            <span><kbd>Enter</kbd> add to batch</span>
+            <span><kbd>Esc</kbd> back out</span>
+          </div>
+        </div>
+
+        <div class="panel out">
+          <div class="phead">
+            <span id="outname">.ui-grab/queue.json</span>
+            <span class="grow"></span>
+            <button id="copy-payload" hidden>copy</button>
+          </div>
+          <div id="payload-wrap">
+            <div class="empty">
+              <span class="chip">waiting</span>
+              <p style="margin:0">
+                Pick an element in the frame, say what should change, and hit <b>Send</b>.
+                What Claude Code would read shows up here.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <details class="src">
+        <summary>The page's source, so you can check the line numbers</summary>
+        <div class="srcbody" id="srcview"></div>
+      </details>
+      <p class="snote" style="margin-top:14px">
+        The <code>candidates</code> above come from the plugin's own ranking — exact text first,
+        then <code>id</code> and <code>data-testid</code>, then <code>aria-label</code> and the
+        whole class attribute, then single class names — with a line that actually
+        <em>opens</em> the element's tag beating one that merely contains the same string.
+        Here it runs in your browser over this page's two files; in your project it runs in Node
+        over the whole tree, and adds the enclosing declaration for the best hits.
+      </p>
+    </section>
+
+    <hr class="hr">
+
+    <section id="next">
+      <div class="shead"><span class="chip">then what</span><h2>Over in Claude Code</h2></div>
+      <p class="snote">
+        The batch lands in <code>.ui-grab/queue.json</code>. One command drains it — or none at all,
+        if you turn on a zero-typing mode.
+      </p>
+      <pre class="term">
+<span class="c">$</span> npm run dev
+  <span class="u">ui-grab</span>  queued 2 changes (2 pending) → .ui-grab/queue.json
+
+<span class="c">&gt;</span> <span class="u">/grab</span>
+  <span class="c">⏵</span> Read .ui-grab/queue.json
+  <span class="c">⏵</span> Update index.html          <span class="c">button#place-order — 1.25×, proportions kept</span>
+  <span class="c">⏵</span> Update src/style.css       <span class="c">.checkout-title line-height 1.35 → 1.15</span>
+  <span class="g">✓</span> Applied 2 changes, queue cleared</pre>
+
+      <table class="modes">
+        <thead><tr><th>mode</th><th>what happens when you hit Send</th></tr></thead>
+        <tbody>
+          <tr><td>off</td><td>Nothing — you run <span class="inline-code">/grab</span> yourself.</td></tr>
+          <tr><td>wait</td><td>The Stop hook holds each turn open a few seconds longer, so a click made just after Claude finishes still lands in the same turn.</td></tr>
+          <tr><td>wake</td><td>An idle session gets poked the moment a batch arrives — typed straight into its tmux pane.</td></tr>
+          <tr><td>both</td><td>Wait first; wake if that window passes. The default.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="cards">
+        <div class="card">
+          <span class="chip">pointers</span>
+          <h3>It sends a pointer, not a snapshot</h3>
+          <p>You might click at 2pm and drain at 4pm, after the file has been edited twice. A snapshot would be a lie by then; a file, a line, a class list and some text still finds the right place.</p>
+        </div>
+        <div class="card">
+          <span class="chip">ranking</span>
+          <h3>Checked, not trusted</h3>
+          <p>With <span class="inline-code">react-grab</span> installed it reads the component and line straight off the fiber — then verifies that line against the source.</p>
+          <p>A reading that doesn't corroborate drops below the grep hits and says <em>line unverified</em>. A confidently wrong line is worse than an honest guess.</p>
+        </div>
+        <div class="card">
+          <span class="chip">local only</span>
+          <h3>The queue is instructions</h3>
+          <p>Whatever lands in it is what an agent goes on to do, so the endpoint takes writes only from a page served locally — a cross-site POST is refused outright.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="wrap">
+    <footer>
+      <span>MIT · built for <a href="https://claude.com/claude-code">Claude Code</a></span>
+      <span class="grow"></span>
+      <a href="https://github.com/ykakade/ui-grab">GitHub</a>
+      <a href="https://www.npmjs.com/package/vite-plugin-ui-grab">npm</a>
+      <a href="https://github.com/ykakade/ui-grab/issues">Issues</a>
+    </footer>
+  </div>
+</main>
+
+<!-- The demo app's two files. Both the frame and the resolver below read from
+     these exact strings, so the line numbers in the payload are real. -->
+<script type="text/plain" id="demo-html">
+<main class="checkout">
+  <header class="checkout-head">
+    <h1 class="checkout-title">Review your order</h1>
+    <p class="checkout-sub">Two items · ships Tuesday</p>
+  </header>
+
+  <ul class="line-items">
+    <li class="line-item">
+      <span class="li-name">Anodized desk lamp</span>
+      <span class="li-price">$148.00</span>
+    </li>
+    <li class="line-item">
+      <span class="li-name">Linen shade, walnut</span>
+      <span class="li-price">$62.00</span>
+    </li>
+  </ul>
+
+  <div class="totals">
+    <div class="total-row"><span>Subtotal</span><span>$210.00</span></div>
+    <div class="total-row"><span>Shipping</span><span>$12.00</span></div>
+    <div class="total-row total-row--grand"><span>Total</span><span>$222.00</span></div>
+  </div>
+
+  <div class="actions">
+    <button id="place-order" class="btn btn-primary">Place order</button>
+    <button class="btn btn-ghost" aria-label="Return to cart">Back to cart</button>
+  </div>
+</main>
+</script>
+
+<script type="text/plain" id="demo-css">
+:root {
+  --paper: #ffffff;
+  --ink: #14161c;
+  --muted: #6b7386;
+  --rule: #e6e8ef;
+  --brand: #4f6bff;
+  --radius: 10px;
+}
+body {
+  margin: 0;
+  padding: 34px 22px;
+  background: #f2f4f9;
+  color: var(--ink);
+  font: 400 14px/1.55 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+}
+.checkout {
+  max-width: 380px;
+  margin: 0 auto;
+  padding: 24px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  box-shadow: 0 12px 34px -18px rgba(20, 22, 28, .35);
+}
+.checkout-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  line-height: 1.35;
+}
+.checkout-sub { margin: 4px 0 20px; color: var(--muted); font-size: 13px; }
+.line-items { list-style: none; margin: 0 0 18px; padding: 0; }
+.line-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.li-price { font-variant-numeric: tabular-nums; color: var(--muted); }
+.totals { margin-bottom: 20px; }
+.total-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.total-row--grand { color: var(--ink); font-weight: 600; font-size: 15px; }
+.actions { display: flex; flex-direction: column; gap: 8px; }
+.btn {
+  font: inherit;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.btn-primary { background: var(--brand); color: #fff; }
+.btn-ghost { background: transparent; color: var(--muted); border-color: var(--rule); }
+</script>
+
+<!-- extension/picker.js, verbatim. Substituted in by site/build.mjs so this
+     page and the plugin can never be running different pickers. -->
+<script type="text/plain" id="picker-src">__PICKER_SOURCE__</script>
+
+<script>
+(() => {
+  const trim = (id) => document.getElementById(id).textContent.replace(/^\n/, '').replace(/\n$/, '');
+  const DEMO_HTML = trim('demo-html');
+  const DEMO_CSS = trim('demo-css');
+  const PICKER = document.getElementById('picker-src').textContent;
+
+  /* ------------------------------------------------------------- resolver --
+     The plugin's ranking, ported to run over these two files instead of a
+     project tree. Same keys, same weights, same tiebreakers. */
+  const FILES = { 'index.html': DEMO_HTML, 'src/style.css': DEMO_CSS };
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  function keys(item) {
+    const out = [];
+    const add = (needle, re, why, weight) => out.push({ needle, re, why, weight });
+    const text = (item.text || '').trim();
+    if (text.length >= 3 && text.length <= 80 && !text.includes('\n')) {
+      add(text, new RegExp(esc(text)), 'text', 0);
+    }
+    if (item.elementId) add(item.elementId, new RegExp('\\b' + esc(item.elementId) + '\\b'), 'id', 1);
+    const testid = item.attrs && (item.attrs['data-testid'] || item.attrs['data-test-id']);
+    if (testid) add(testid, new RegExp(esc(testid)), 'data-testid', 1);
+    const aria = item.attrs && item.attrs['aria-label'];
+    if (aria && aria.length >= 3) add(aria, new RegExp(esc(aria)), 'aria-label', 2);
+    if (item.classes && item.classes.length > 6) {
+      add(item.classes, new RegExp(esc(item.classes)), 'class list', 2);
+    }
+    const cls = (item.classes || '').split(/\s+/).filter((c) => c.length > 3);
+    for (const c of cls.sort((a, b) => b.length - a.length).slice(0, 3)) {
+      add(c, new RegExp('\\b' + esc(c) + '\\b'), 'class .' + c, 3);
+    }
+    return out;
+  }
+
+  function resolve(item) {
+    const ks = keys(item);
+    if (!ks.length) return [];
+    const tag = (item.tag || '').toLowerCase();
+    const tagRe = tag ? new RegExp('<\\s*' + esc(tag) + '[\\s/>]', 'i') : null;
+    const hits = [];
+    const seen = new Set();
+
+    for (const [file, src] of Object.entries(FILES)) {
+      const live = ks.filter((k) => src.includes(k.needle));
+      if (!live.length) continue;
+      const lines = src.split('\n');
+      for (const k of live) {
+        for (let i = 0; i < lines.length; i++) {
+          if (!k.re.test(lines[i])) continue;
+          const id = file + ':' + (i + 1);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          hits.push({
+            file, line: i + 1, matchedBy: k.why,
+            weight: k.weight - (tagRe && tagRe.test(lines[i]) ? 0.5 : 0),
+            snippet: lines[i].trim().slice(0, 160),
+          });
+          break;
+        }
+      }
+    }
+
+    const best = new Map();
+    for (const h of hits) {
+      if (!best.has(h.file) || h.weight < best.get(h.file)) best.set(h.file, h.weight);
+    }
+    return hits
+      .sort((a, b) => best.get(a.file) - best.get(b.file) || a.weight - b.weight || a.line - b.line)
+      .map(({ weight, ...rest }) => rest)
+      .slice(0, 4);
+  }
+
+  /* ---------------------------------------------------------------- output */
+  const wrap = document.getElementById('payload-wrap');
+  const copyBtn = document.getElementById('copy-payload');
+  const outname = document.getElementById('outname');
+  let lastJSON = '';
+
+  const escHtml = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  function colorize(json) {
+    return escHtml(json).replace(
+      /("(?:\\.|[^"\\])*")(\s*:)?|\b(-?\d+(?:\.\d+)?)\b|\b(true|false|null)\b/g,
+      (m, str, colon, num, lit) => {
+        if (str) return colon ? '<span class="k">' + str + '</span>' + colon : '<span class="s">' + str + '</span>';
+        if (num) return '<span class="n">' + num + '</span>';
+        return '<span class="p">' + lit + '</span>';
+      });
+  }
+
+  function show(items, example = false) {
+    const queuedAt = new Date().toISOString();
+    const payload = {
+      version: 1,
+      items: items.map((it) => {
+        const candidates = resolve(it);
+        // The fields the plugin keeps, in the order it writes them.
+        return {
+          route: it.route, tag: it.tag, elementId: it.elementId, classes: it.classes,
+          selector: it.selector, text: it.text,
+          ...(Object.keys(it.attrs || {}).length ? { attrs: it.attrs } : {}),
+          styles: it.styles, rect: it.rect,
+          ancestors: it.ancestors, children: it.children,
+          comment: it.comment, queuedAt, candidates,
+        };
+      }),
+    };
+    lastJSON = JSON.stringify(payload, null, 2);
+    wrap.innerHTML = '<pre id="payload">' + colorize(lastJSON) + '</pre>';
+    outname.textContent = example
+      ? 'example · .ui-grab/queue.json'
+      : '.ui-grab/queue.json · ' + items.length + (items.length === 1 ? ' item' : ' items');
+    copyBtn.hidden = false;
+    renderSource(payload.items.flatMap((i) => i.candidates));
+  }
+
+  /* --------------------------------------------------------- source viewer */
+  const srcview = document.getElementById('srcview');
+  function renderSource(candidates = []) {
+    const marked = new Set(candidates.map((c) => c.file + ':' + c.line));
+    srcview.innerHTML = Object.entries(FILES).map(([file, src]) =>
+      '<pre><div class="ln" style="color:var(--muted)"><i></i>' + escHtml(file) + '</div>' +
+      src.split('\n').map((l, i) =>
+        '<div class="ln' + (marked.has(file + ':' + (i + 1)) ? ' hit' : '') + '">' +
+        '<i>' + (i + 1) + '</i>' + (escHtml(l) || ' ') + '</div>').join('') +
+      '</pre>').join('');
+  }
+  renderSource();
+
+  /* The payload is longer than the frame is tall, so left to itself it would
+     stretch the row and leave the frame floating in dead space. Measure rather
+     than guess a height — the header and footer rows depend on the loaded font. */
+  const outPanel = document.querySelector('.out');
+  const framePanel = document.querySelector('.split > .panel');
+  const syncHeights = () => {
+    outPanel.style.height = matchMedia('(min-width: 980px)').matches
+      ? framePanel.offsetHeight + 'px'
+      : '';
+  };
+  addEventListener('resize', syncHeights);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncHeights);
+
+  /* ------------------------------------------------------------- the frame */
+  // Each boot gets a brand-new iframe rather than rewriting the old one.
+  // document.open() clears the document but keeps the same Window, so a second
+  // write into the same frame leaves window.__uiGrab set from the first — and
+  // the picker's re-entry guard then makes it a silent no-op with no dock.
+  function boot() {
+    const old = document.getElementById('stage');
+    const frame = document.createElement('iframe');
+    frame.id = 'stage';
+    frame.title = 'ui-grab demo app';
+    old.replaceWith(frame);
+
+    const d = frame.contentDocument;
+    d.open();
+    d.write(
+      '<!doctype html><html><head><meta charset="utf-8">' +
+      '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">' +
+      '<style>' + DEMO_CSS + '</style></head><body>' + DEMO_HTML + '</body></html>');
+    d.close();
+
+    const w = frame.contentWindow;
+    let mem = [];
+    w.__UI_GRAB_CFG = { hotkey: 'Alt+Shift+G', badge: true, version: 'demo' };
+    // The picker's HOST interface. In the plugin, `send` POSTs to the dev
+    // server; here it hands the batch to the panel on the right instead.
+    w.__UI_GRAB_HOST__ = {
+      cfg: w.__UI_GRAB_CFG,
+      shot: null,
+      load: () => mem.slice(),
+      save: (items) => { mem = items; },
+      send: async (items) => {
+        show(items);
+        return { ok: true, added: items.length, pending: items.length };
+      },
+    };
+
+    const s = d.createElement('script');
+    s.textContent = PICKER;
+    d.body.appendChild(s);
+
+    // Start picking straight away — nobody should have to find the hotkey to
+    // see what this does — and seed the panel with one real pick, so the output
+    // is visible before anyone interacts. It goes through the picker's own API
+    // rather than being written by hand, so the styles and rect are genuine.
+    const go = () => {
+      if (!w.__uiGrab) return setTimeout(go, 20);
+      const g = w.__uiGrab;
+      g.open(true);
+      const btn = d.querySelector('#place-order');
+      if (!btn || seeded) { g.setPicking(true); return; }
+
+      // pick() focuses the comment box inside the frame, which would scroll the
+      // page down to it on load.
+      const y = window.scrollY;
+      g.pick(btn);
+      g.comment('make this 1.25x larger, keep the proportions');
+      Promise.resolve(g.add()).then(() => {
+        const items = g.items();
+        if (items.length) { show(items, true); g.remove(0); }
+        g.setPicking(true);
+        window.scrollTo(0, y);
+        seeded = true;
+      });
+      window.scrollTo(0, y);
+    };
+    go();
+  }
+  let seeded = false;
+
+  boot();
+  syncHeights();
+
+  document.getElementById('restart').addEventListener('click', () => {
+    seeded = false;
+    boot();
+    wrap.innerHTML = '<div class="empty"><span class="chip">waiting</span>' +
+      '<p style="margin:0">Pick an element in the frame, say what should change, and hit <b>Send</b>. ' +
+      'What Claude Code would read shows up here.</p></div>';
+    outname.textContent = '.ui-grab/queue.json';
+    copyBtn.hidden = true;
+    renderSource();
+  });
+
+  /* ---------------------------------------------------------------- copying */
+  async function copy(text, btn, done = 'copied') {
+    const was = btn.textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = done;
+    } catch {
+      btn.textContent = 'select it';
+    }
+    setTimeout(() => { btn.textContent = was; }, 1400);
+  }
+  document.getElementById('copy-install').addEventListener('click', (e) =>
+    copy('npm i -D vite-plugin-ui-grab', e.currentTarget));
+  copyBtn.addEventListener('click', (e) => copy(lastJSON, e.currentTarget));
+})();
+</script>

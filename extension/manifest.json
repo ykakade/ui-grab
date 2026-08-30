@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "UI Grab",
+  "version": "0.1.0",
+  "description": "Pick elements on any page, comment on them, batch them, and send the batch to Claude Code.",
+  "permissions": [
+    "scripting",
+    "activeTab",
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "background": {
+    "service_worker": "sw.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "UI Grab"
+  },
+  "commands": {
+    "toggle-picker": {
+      "suggested_key": {
+        "default": "Alt+Shift+G"
+      },
+      "description": "Toggle the UI Grab picker on this page"
+    }
+  }
+}
