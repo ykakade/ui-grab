@@ -103,7 +103,7 @@ function keys(item) {
  * confidently wrong line is worse than an honest grep hit — so every fiber
  * reading gets checked against the source before it is allowed to outrank one.
  */
-function corroborates(line, item) {
+export function corroborates(line, item) {
   const src = (line || '').toLowerCase();
   if (!src) return false;
   if (item.tag && src.includes('<' + String(item.tag).toLowerCase())) return true;
@@ -279,4 +279,45 @@ export function resolveBatch(root, items) {
 
 export function resolveCandidates(root, item) {
   return resolveBatch(root, [item])[0];
+}
+
+// How much a candidate list deserves to be believed, and therefore how much of
+// it is worth sending. A corroborated fiber reading or a confirmed map entry is
+// not a guess; an exact text or id hit with no rival in another file is nearly
+// as good. Everything below that gets the full spread, because the agent will
+// have to choose between them.
+const BASE = {
+  map: 1, react: 1,
+  id: 0.92, 'data-testid': 0.92,
+  text: 0.85,
+  'aria-label': 0.6, 'class list': 0.55,
+};
+
+export const CONFIDENT = 0.8;
+
+export function confidence(candidates = []) {
+  const top = candidates[0];
+  if (!top) return 0;
+  const base = BASE[top.matchedBy] ?? 0.35;
+  if (base === 1) return 1;                       // ground truth, rivals or not
+  // Other hits in the same file are the same element seen twice. Hits in other
+  // files are genuine competition, and each one costs.
+  const rivals = candidates.slice(1).filter((c) => c.file !== top.file).length;
+  return Math.max(0, base - rivals * 0.15);
+}
+
+/**
+ * Trim a candidate list to what is worth sending. Confident means one pointer
+ * and no embedded source: the agent opens the file itself, which it has to do
+ * anyway before editing.
+ */
+export function prune(candidates = []) {
+  const score = confidence(candidates);
+  if (score < CONFIDENT) return { candidates, confident: false, score };
+  const top = candidates[0];
+  return {
+    candidates: candidates.filter((c) => c.file === top.file).slice(0, 2),
+    confident: true,
+    score,
+  };
 }

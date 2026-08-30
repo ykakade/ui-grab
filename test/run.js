@@ -156,6 +156,7 @@ console.log('\ncandidate ranking');
 // ---- 3. browser end to end ---------------------------------------------------
 console.log('\nbrowser (headless chrome)');
 let e2e = null;
+let dom = '';
 if (!CHROME) {
   console.log('  skip (no chrome — set CHROME_PATH to run these)');
 } else {
@@ -168,7 +169,6 @@ const chrome = spawn(CHROME, [
   '--virtual-time-budget=8000', '--dump-dom', `${base}/?uigrabtest=1`,
 ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
-let dom = '';
 chrome.stdout.on('data', (d) => (dom += d));
 const killer = setTimeout(() => chrome.kill('SIGKILL'), 25_000);
 await new Promise((r) => chrome.on('close', r));
@@ -185,8 +185,9 @@ ok('browser send reached the server', !!e2e, 'title: ' + (dom.match(/<title>([^<
 }
 
 if (e2e) {
-  const [btn, title] = e2e.items;
-  ok('two items arrived', e2e.items.length === 2, JSON.stringify(e2e.items.map((i) => i.tag)));
+  const [btn, title, walked, group] = e2e.items;
+  const pageTitle = dom.match(/<title>([^<]*)/)?.[1] || '';
+  ok('four items arrived', e2e.items.length === 4, JSON.stringify(e2e.items.map((i) => i.tag)));
   ok('button captured with comment',
     btn.tag === 'button' && btn.elementId === 'place-order' &&
     /1\.25x larger/.test(btn.comment), JSON.stringify(btn.comment));
@@ -207,6 +208,93 @@ if (e2e) {
   ok('css var source found for heading',
     (title.candidates || []).some((c) => c.file.endsWith('style.css') || c.file === 'index.html'),
     JSON.stringify(title.candidates));
+
+  // ---- what the new picker can do -------------------------------------------
+  console.log('\npicker');
+  ok('walked up to a parent that cannot be hovered',
+    walked.tag === 'li' && walked.classes === 'line-item', `${walked.tag}.${walked.classes}`);
+  ok('and the comment was reworded in the queue',
+    /more room/.test(walked.comment), walked.comment);
+  ok('reordering held', e2e.items[2] === walked && e2e.items[3] === group,
+    e2e.items.map((i) => i.tag).join(','));
+  ok('one comment can cover several elements',
+    Array.isArray(group.also) && group.also.length === 1, JSON.stringify(group.also));
+  ok('the extra element is described enough to look up',
+    group.also[0].classes.includes('btn-ghost') && !!group.also[0].selector &&
+    !!group.also[0].text, JSON.stringify(group.also[0]));
+  ok('and it got its own candidates',
+    (group.candidates || []).some((c) => c.el === 1),
+    JSON.stringify((group.candidates || []).map((c) => `${c.file}:${c.line}:${c.el || 0}`)));
+  ok('screenshots stay off until asked for', /shots=true/.test(pageTitle), pageTitle);
+  ok('nothing carries a screenshot by default',
+    e2e.items.every((i) => !i.screenshot));
+
+  // ---- a leaner payload ------------------------------------------------------
+  console.log('\npayload size');
+  ok('source blocks live in one shared map, not on the items',
+    e2e.items.every((i) => !i.source) && typeof e2e.sources === 'object',
+    JSON.stringify(Object.keys(e2e.sources || {})));
+  ok('every reference resolves to a block',
+    e2e.items.flatMap((i) => i.sourceRefs || []).every((r) => !!e2e.sources[r]),
+    JSON.stringify(e2e.items.map((i) => i.sourceRefs)));
+  ok('no block is stored twice',
+    new Set(Object.values(e2e.sources || {}).map((b) => b.file + b.lines)).size ===
+      Object.keys(e2e.sources || {}).length);
+  ok('a confident pointer travels without a copy of the file',
+    e2e.items.every((i) => (i.candidates || []).length !== 1 || !i.sourceRefs ||
+      i.candidates[0].matchedBy === 'class list'),
+    JSON.stringify(e2e.items.map((i) => [i.candidates?.[0]?.matchedBy, i.sourceRefs?.length])));
+
+  // ---- verification ----------------------------------------------------------
+  console.log('\nverification');
+  ok('the browser is watching what it sent', /watch=4/.test(pageTitle), pageTitle);
+  const sent = JSON.parse(fs.readFileSync(path.join(DEMO, '.ui-grab/sent.json'), 'utf8'));
+  const scored = new Set(sent.sent.map((s) => s.id));
+  ok('and the server knows which pointer to score for each of them',
+    e2e.items.filter((i) => (i.candidates || []).length).every((i) => scored.has(i.id)),
+    JSON.stringify(sent.sent.map((s) => `${s.id}:${s.file}:${s.line}`)));
+  ok('every ledger entry names a file and a line',
+    sent.sent.every((s) => s.file && s.line > 0));
+  ok('a batch got a restore point',
+    (() => { try { return JSON.parse(fs.readFileSync(path.join(DEMO, '.ui-grab/batches.json'), 'utf8')).batches.length > 0; }
+             catch { return false; } })());
+}
+
+// ---- 3b. verify and revert endpoints -----------------------------------------
+console.log('\nverify endpoint');
+{
+  const post = (route, body) => fetch(`${base}/__ui-grab/${route}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: base, 'sec-fetch-site': 'same-origin' },
+    body: JSON.stringify(body),
+  });
+
+  const unknown = await (await post('verify', { results: [{ id: 'nope', changed: true }] })).json();
+  ok('a verdict for an unknown item is counted, not an error',
+    unknown.ok && unknown.unknown === 1, JSON.stringify(unknown));
+
+  const malformed = await post('verify', { results: 'no' });
+  ok('a malformed verdict is refused', malformed.status === 400);
+
+  const evilVerify = await fetch(`${base}/__ui-grab/verify`, {
+    method: 'POST',
+    headers: { 'content-type': 'text/plain', origin: 'https://evil.example',
+               'sec-fetch-site': 'cross-site' },
+    body: JSON.stringify({ results: [] }),
+  });
+  ok('the origin gate covers verify too', evilVerify.status === 403, String(evilVerify.status));
+
+  const evilRevert = await fetch(`${base}/__ui-grab/revert`, {
+    method: 'POST',
+    headers: { 'content-type': 'text/plain', origin: 'https://evil.example',
+               'sec-fetch-site': 'cross-site' },
+    body: JSON.stringify({ batch: 'anything' }),
+  });
+  ok('and revert, which writes files', evilRevert.status === 403, String(evilRevert.status));
+
+  const noSuch = await post('revert', { batch: 'b-does-not-exist' });
+  ok('reverting a batch that never existed fails cleanly', noSuch.status === 400,
+    String(noSuch.status));
 }
 
 // ---- 4. stop hook ------------------------------------------------------------

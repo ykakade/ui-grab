@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-ui-grab",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Select elements in your running app, comment on them, batch them, and send them to Claude Code.",
   "type": "module",
   "license": "MIT",
@@ -16,13 +16,17 @@
   "keywords": [
     "vite-plugin",
     "claude-code",
+    "nextjs",
     "ai",
     "devtools",
     "ui",
     "dx"
   ],
   "exports": {
-    ".": "./src/index.js"
+    ".": "./src/index.js",
+    "./next": "./src/next.js",
+    "./middleware": "./src/middleware.js",
+    "./package.json": "./package.json"
   },
   "main": "./src/index.js",
   "files": [
@@ -36,12 +40,14 @@
   ],
   "bin": {
     "ui-grab-install": "./bin/install-claude.js",
-    "ui-grab-bridge": "./bin/ui-grab-bridge.js"
+    "ui-grab-bridge": "./bin/ui-grab-bridge.js",
+    "ui-grab-drain": "./bin/ui-grab-drain.js"
   },
   "scripts": {
     "test": "node test/automation.js && node test/run.js",
     "demo": "vite examples/demo",
-    "site": "node site/build.mjs"
+    "site": "node site/build.mjs",
+    "drain": "node bin/ui-grab-drain.js"
   },
   "peerDependencies": {
     "vite": ">=5"

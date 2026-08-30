@@ -3,8 +3,9 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { resolveBatch } from '../src/resolve.js';
-import { extractSource } from '../src/extract.js';
+import { ingest } from '../src/ingest.js';
+import { applyResults } from '../src/verify.js';
+import { revert } from '../src/snapshot.js';
 import { GRAB_COMMAND } from '../src/grab-command.js';
 import { loadConfig, saveConfig, wakes } from '../src/config.js';
 import { readQueue, writeQueue, fromLocalPage } from '../src/queue.js';
@@ -14,11 +15,25 @@ import { wake } from '../src/wake.js';
 export const DEFAULT_PORTS = [7317, 7318, 7319, 7320];
 const MAX_BODY = 48 * 1024 * 1024; // screenshots are base64, so allow room
 
-export function createBridge({ root, quiet = false, resolve = true, source = true, screenshots = false } = {}) {
+/** Read a JSON body, then hand it to `then` — or answer 400 and stop. */
+function readBody(req, res, limit, then) {
+  let raw = '';
+  req.on('data', (c) => { raw += c; if (raw.length > limit) req.destroy(); });
+  req.on('end', () => {
+    const fail = (msg) => {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: msg }));
+    };
+    let parsed;
+    try { parsed = JSON.parse(raw || '{}'); } catch (e) { return fail(e.message); }
+    then(parsed, fail);
+  });
+}
+
+export function createBridge({ root, quiet = false, resolve = true, source = true, adaptive = true, screenshots = false } = {}) {
   root = path.resolve(root || process.cwd());
   const name = path.basename(root);
   const queueFile = path.join(root, '.ui-grab/queue.json');
-  const shotDir = path.join(root, '.ui-grab/shots');
   const log = (...a) => !quiet && console.log(...a);
 
   function ensureCommand() {
@@ -27,17 +42,6 @@ export function createBridge({ root, quiet = false, resolve = true, source = tru
     fs.mkdirSync(path.dirname(cmd), { recursive: true });
     fs.writeFileSync(cmd, GRAB_COMMAND);
     log(`  created ${path.relative(root, cmd)}`);
-  }
-
-  // A screenshot is far more useful to an agent as a file it can open than as
-  // a megabyte of base64 sitting in the queue JSON.
-  function saveShot(id, dataUrl) {
-    const m = /^data:image\/(png|jpeg);base64,(.+)$/s.exec(dataUrl || '');
-    if (!m) return null;
-    fs.mkdirSync(shotDir, { recursive: true });
-    const rel = path.join('.ui-grab/shots', `${id}.${m[1] === 'jpeg' ? 'jpg' : 'png'}`);
-    fs.writeFileSync(path.join(root, rel), Buffer.from(m[2], 'base64'));
-    return rel;
   }
 
   const server = http.createServer((req, res) => {
@@ -87,60 +91,21 @@ export function createBridge({ root, quiet = false, resolve = true, source = tru
     }
 
     if (url === '/queue' && req.method === 'POST') {
-      let body = '';
-      req.on('data', (c) => {
-        body += c;
-        if (body.length > MAX_BODY) { req.destroy(); }
-      });
-      req.on('end', () => {
-        let incoming;
-        try {
-          const parsed = JSON.parse(body || '{}');
-          incoming = Array.isArray(parsed) ? parsed : parsed.items;
-          if (!Array.isArray(incoming)) throw new Error('expected { items: [...] }');
-        } catch (e) {
-          return json(400, { ok: false, error: e.message });
-        }
+      return readBody(req, res, MAX_BODY, (parsed, fail) => {
+        const incoming = Array.isArray(parsed) ? parsed : parsed.items;
+        if (!Array.isArray(incoming)) return fail('expected { items: [...] }');
 
-        // One pass over the project for the whole batch, not one per item.
-        let resolved = incoming.map(() => []);
-        if (resolve) {
-          try { resolved = resolveBatch(root, incoming); }
-          catch (e) { log(`  resolve failed: ${e.message}`); }
-        }
-
-        const queuedAt = new Date().toISOString();
-        const stamped = incoming.map((item, i) => {
-          const { screenshot, ...rest } = item;
-          const out = { ...rest, queuedAt };
-          if (screenshots && screenshot) {
-            try {
-              const rel = saveShot(item.id, screenshot);
-              if (rel) out.screenshot = rel;
-            } catch (e) {
-              log(`  screenshot save failed: ${e.message}`);
-            }
-          }
-          if (resolve) out.candidates = resolved[i];
-          if (source) {
-            try { out.source = extractSource(root, out.candidates || []); }
-            catch (e) { out.source = []; log(`  extract failed: ${e.message}`); }
-          }
-          return out;
+        const out = ingest(root, queueFile, incoming, {
+          resolve, source, adaptive, screenshots, log,
         });
 
-        const q = readQueue(queueFile);
-        q.items.push(...stamped);
-        writeQueue(queueFile, q);
-
-        for (const it of stamped) {
-          const where = it.candidates?.[0];
-          const src = it.source?.length
-            ? `  [${it.source.map((b) => `${b.file}:${b.lines}`).join(', ')}]` : '';
+        for (const it of out.items) {
+          const where = (it.candidates || [])[0];
           log(`  + <${it.tag}> ${JSON.stringify((it.comment || '').slice(0, 52))}` +
-              (where ? `  → ${where.file}:${where.line}` : '') + src);
+              (where ? `  → ${where.file}:${where.line} [${where.matchedBy}]` : '') +
+              (it.sourceRefs?.length ? `  [${it.sourceRefs.join(', ')}]` : ''));
         }
-        log(`  ${q.items.length} pending in ${path.relative(root, queueFile)}`);
+        log(`  ${out.pending} pending in ${path.relative(root, queueFile)}`);
 
         // The queue is only useful once something reads it. A busy session
         // will via its Stop hook; an idle one has to be poked.
@@ -148,7 +113,7 @@ export function createBridge({ root, quiet = false, resolve = true, source = tru
         const cfg = loadConfig(root);
         if (wakes(cfg)) {
           try {
-            woke = wake(root, cfg, q.items.length, path.relative(root, queueFile));
+            woke = wake(root, cfg, out.pending, path.relative(root, queueFile));
             log(woke.woke ? `  woke via ${woke.via}: ${woke.detail}`
               : woke.via === 'busy' ? `  ${woke.detail} is mid-turn — its Stop hook will drain this`
               : `  nothing woken: ${woke.detail}`);
@@ -157,9 +122,27 @@ export function createBridge({ root, quiet = false, resolve = true, source = tru
           }
         }
 
-        json(200, { ok: true, added: stamped.length, pending: q.items.length, target: name, woke });
+        json(200, { ok: true, added: out.items.length, pending: out.pending,
+                    batch: out.batch, target: name, woke });
       });
-      return;
+    }
+
+    // The browser re-measures what it picked once the agent has been through,
+    // and says which elements actually moved. That is the only signal here that
+    // knows whether the pointer we shipped was right.
+    if (url === '/verify' && req.method === 'POST') {
+      return readBody(req, res, 256 * 1024, (parsed, fail) => {
+        if (!Array.isArray(parsed.results)) return fail('expected { results: [...] }');
+        json(200, { ok: true, ...applyResults(root, parsed.results) });
+      });
+    }
+
+    if (url === '/revert' && req.method === 'POST') {
+      return readBody(req, res, 8192, (parsed) => {
+        const out = revert(root, parsed.batch);
+        log(out.ok ? `  reverted ${out.files.length} file(s)` : `  revert failed: ${out.error}`);
+        json(out.ok ? 200 : 400, out);
+      });
     }
 
     json(404, { ok: false, error: 'not found' });

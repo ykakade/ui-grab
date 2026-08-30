@@ -13,6 +13,12 @@ window.__UI_GRAB_HOST__ = {
       .then((r) => (r && r.ok ? r.dataUrl : null))
       .catch(() => null),
 
+  verify: (results) =>
+    chrome.runtime.sendMessage({ type: 'verify', results }).catch((e) => ({ ok: false, error: e.message })),
+
+  revert: (batch) =>
+    chrome.runtime.sendMessage({ type: 'revert', batch }).catch((e) => ({ ok: false, error: e.message })),
+
   load: () =>
     chrome.storage.local.get('items').then((d) => d.items || []).catch(() => []),
 
@@ -23,6 +29,9 @@ window.__UI_GRAB_HOST__ = {
     const lean = items.map(({ screenshot, ...rest }) => rest);
     chrome.storage.local.set({ items: lean }).catch(() => {});
   },
+
+  loadState: (k) => chrome.storage.local.get('st:' + k).then((d) => d['st:' + k] ?? null).catch(() => null),
+  saveState: (k, v) => { chrome.storage.local.set({ ['st:' + k]: v }).catch(() => {}); },
 };
 
 chrome.runtime.onMessage.addListener((msg) => {

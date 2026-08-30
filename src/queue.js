@@ -3,26 +3,49 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const EMPTY = { version: 1, items: [] };
+export const QUEUE_VERSION = 2;
+const EMPTY = { version: QUEUE_VERSION, items: [], sources: {} };
 
+/**
+ * v2 moved source blocks off the items and into a `sources` map they reference
+ * by key, because four picks in one component used to ship that component four
+ * times. v1 files still read fine — their per-item blocks are hoisted on read.
+ */
 export function readQueue(file) {
-  try {
-    const d = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return { version: 1, items: Array.isArray(d.items) ? d.items : [] };
-  } catch {
-    return { ...EMPTY, items: [] };
+  let d;
+  try { d = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return { ...EMPTY, items: [], sources: {} }; }
+
+  const items = Array.isArray(d.items) ? d.items : [];
+  const sources = d.sources && typeof d.sources === 'object' ? { ...d.sources } : {};
+
+  for (const item of items) {
+    if (!Array.isArray(item.source)) continue;
+    item.sourceRefs = item.source.map((b) => {
+      const ref = `${b.file}:${b.lines}`;
+      if (!sources[ref]) sources[ref] = b;
+      return ref;
+    });
+    delete item.source;
   }
+  return { version: QUEUE_VERSION, items, sources };
 }
 
 let seq = 0;
 
 export function writeQueue(file, q) {
+  const items = q.items || [];
+  // A block nobody points at is dead weight; drop it rather than let the file
+  // grow for the life of the project.
+  const live = new Set(items.flatMap((i) => i.sourceRefs || []));
+  const sources = Object.fromEntries(
+    Object.entries(q.sources || {}).filter(([ref]) => live.has(ref)));
+
   fs.mkdirSync(path.dirname(file), { recursive: true });
   // Written aside and renamed: a reader that catches the file mid-write would
   // parse a truncated queue as an empty one and drop everything in it. The
   // counter keeps two writes from the same process off the same temp path.
   const tmp = `${file}.${process.pid}.${seq++}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(q, null, 2) + '\n');
+  fs.writeFileSync(tmp, JSON.stringify({ version: QUEUE_VERSION, items, sources }, null, 2) + '\n');
   fs.renameSync(tmp, file);
 }
 

@@ -5,10 +5,13 @@ dist
 # .claude/commands/ are meant to be committed, this one is not.
 .claude/settings.local.json
 
-# Pending picks and their crops. .ui-grab/config.json is the one file in here
-# worth committing — it is the team's automation mode.
+# Pending picks and the bookkeeping around them. Two files in here are worth
+# committing: config.json, which is the team's automation mode, and map.json,
+# which is where confirmed picks were found. Everything else is per-machine.
 .ui-grab/queue.json
 .ui-grab/queue.blocks.json
+.ui-grab/sent.json
+.ui-grab/batches.json
 .ui-grab/shots/
 
 .DS_Store

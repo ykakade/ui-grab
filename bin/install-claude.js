@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GRAB_COMMAND } from '../src/grab-command.js';
+import { GRAB_COMMAND, AGENTS_SECTION } from '../src/grab-command.js';
 import { loadConfig, saveConfig, MODES, DEFAULTS } from '../src/config.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -21,6 +21,8 @@ if (argv.includes('-h') || argv.includes('--help')) {
 usage: ui-grab-install [options]
 
   --with-hook     write the Stop hook into .claude/settings.json
+  --agents        add a ui-grab section to AGENTS.md, for agents without
+                  slash commands (Cursor, Codex, Aider, and friends)
   --mode <m>      ${MODES.join(' | ')}     (default ${DEFAULTS.mode})
                     off   nothing automatic; you run /grab
                     wait  the Stop hook holds each turn open a little longer,
@@ -43,6 +45,21 @@ const cmd = path.resolve(root, '.claude/commands/grab.md');
 fs.mkdirSync(path.dirname(cmd), { recursive: true });
 fs.writeFileSync(cmd, GRAB_COMMAND);
 console.log(`wrote ${path.relative(root, cmd)}`);
+
+// ---- AGENTS.md --------------------------------------------------------------
+// /grab is the Claude Code path. Everything else reads AGENTS.md and runs the
+// drain command itself.
+if (argv.includes('--agents')) {
+  const af = path.resolve(root, 'AGENTS.md');
+  let existing = '';
+  try { existing = fs.readFileSync(af, 'utf8'); } catch {}
+  if (existing.includes('## ui-grab')) {
+    console.log('AGENTS.md already has a ui-grab section');
+  } else {
+    fs.writeFileSync(af, existing ? `${existing.replace(/\s*$/, '')}\n\n${AGENTS_SECTION}` : AGENTS_SECTION);
+    console.log(`${existing ? 'appended to' : 'wrote'} AGENTS.md`);
+  }
+}
 
 // ---- mode -------------------------------------------------------------------
 const patch = {};

@@ -30,7 +30,7 @@ async function inject(tabId) {
   await chrome.scripting.executeScript({
     target: { tabId },
     func: (cfg) => { window.__UI_GRAB_CFG = cfg; },
-    args: [{ hotkey: 'Alt+Shift+G', badge: true, ...(settings || {}) }],
+    args: [{ hotkey: 'Alt+Shift+G', badge: true, shots: false, verify: true, ...(settings || {}) }],
   });
   await chrome.scripting.executeScript({
     target: { tabId },
@@ -101,6 +101,19 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
           const body = await r.json().catch(() => ({}));
           if (!r.ok || !body.ok) throw new Error(body.error || `HTTP ${r.status}`);
           bridge = { ...bridge, config: body.config }; // keep the cached health fresh
+          return reply(body);
+        }
+        case 'verify':
+        case 'revert': {
+          const b = await findBridge();
+          if (!b) return reply({ ok: false, error: 'bridge not running' });
+          const r = await fetch(`${b.base}/${msg.type}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(msg.type === 'verify' ? { results: msg.results } : { batch: msg.batch }),
+          });
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok || !body.ok) throw new Error(body.error || `HTTP ${r.status}`);
           return reply(body);
         }
         case 'shot':
