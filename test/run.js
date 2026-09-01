@@ -187,7 +187,10 @@ ok('browser send reached the server', !!e2e, 'title: ' + (dom.match(/<title>([^<
 if (e2e) {
   const [btn, title, walked, group] = e2e.items;
   const pageTitle = dom.match(/<title>([^<]*)/)?.[1] || '';
-  ok('four items arrived', e2e.items.length === 4, JSON.stringify(e2e.items.map((i) => i.tag)));
+  ok('five items arrived', e2e.items.length === 5, JSON.stringify(e2e.items.map((i) => i.tag)));
+  ok('the question is marked as one in the queue',
+    e2e.items.filter((i) => i.kind === 'ask').length === 1,
+    JSON.stringify(e2e.items.map((i) => i.kind || 'change')));
   ok('button captured with comment',
     btn.tag === 'button' && btn.elementId === 'place-order' &&
     /1\.25x larger/.test(btn.comment), JSON.stringify(btn.comment));
@@ -248,11 +251,21 @@ if (e2e) {
   // ---- verification ----------------------------------------------------------
   console.log('\nverification');
   ok('the browser is watching what it sent', /watch=4/.test(pageTitle), pageTitle);
+  ok('but not the question — nothing about it will move', /asked=1/.test(pageTitle) &&
+    !/watch=5/.test(pageTitle), pageTitle);
+  ok('the question stays on screen waiting for its answer', /parked=1/.test(pageTitle), pageTitle);
   const sent = JSON.parse(fs.readFileSync(path.join(DEMO, '.ui-grab/sent.json'), 'utf8'));
   const scored = new Set(sent.sent.map((s) => s.id));
   ok('and the server knows which pointer to score for each of them',
-    e2e.items.filter((i) => (i.candidates || []).length).every((i) => scored.has(i.id)),
+    e2e.items.filter((i) => i.kind !== 'ask' && (i.candidates || []).length)
+      .every((i) => scored.has(i.id)),
     JSON.stringify(sent.sent.map((s) => `${s.id}:${s.file}:${s.line}`)));
+  // A question is never applied, so no verdict is coming for it. Scoring one
+  // would leave it unresolved forever, and "unchanged" is how the map decides
+  // it had pointed at the wrong place.
+  ok('a question is left out of the scoring ledger',
+    e2e.items.filter((i) => i.kind === 'ask').every((i) => !scored.has(i.id)),
+    JSON.stringify([...scored]));
   ok('every ledger entry names a file and a line',
     sent.sent.every((s) => s.file && s.line > 0));
   ok('a batch got a restore point',

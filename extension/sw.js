@@ -116,6 +116,16 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
           if (!r.ok || !body.ok) throw new Error(body.error || `HTTP ${r.status}`);
           return reply(body);
         }
+        // Polled rather than streamed, and quiet about a missing bridge: this
+        // runs every couple of seconds, so a bridge that is not up yet must not
+        // fill the page's console with failures.
+        case 'events': {
+          const b = await findBridge();
+          if (!b) return reply({ ok: true, events: [], seq: msg.since || 0 });
+          const r = await fetch(`${b.base}/events?since=${msg.since || 0}`, { cache: 'no-store' });
+          const body = await r.json().catch(() => ({}));
+          return reply(r.ok && body.ok ? body : { ok: true, events: [], seq: msg.since || 0 });
+        }
         case 'shot':
           return reply({ ok: true, dataUrl: await shot(sender.tab.id, msg.rect, msg.dpr) });
         case 'status':

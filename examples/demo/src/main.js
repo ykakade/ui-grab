@@ -46,12 +46,29 @@ if (new URLSearchParams(location.search).has('uigrabtest')) {
 
       if (api.items().length !== 4) throw new Error('expected 4 queued, got ' + api.items().length);
 
+      // Questions are queued the same way, but they are not changes: they must
+      // not end up in the watch list, because nothing about them will move.
+      api.setAsk(true);
+      api.pick(document.querySelector('.checkout-title'));
+      api.comment('why is this heading not centred?');
+      api.add();
+      api.setAsk(false);
+      const asked = api.items().filter((i) => i.kind === 'ask').length;
+
+      if (api.items().length !== 5) throw new Error('expected 5 queued, got ' + api.items().length);
+
       const r = await api.send();
       document.title = r.ok
-        ? `UIGRAB_OK:${r.added}:watch=${api.watching().length}:shots=${shotsOff && shotsOn}`
+        ? `UIGRAB_OK:${r.added}:watch=${api.watching().length}:shots=${shotsOff && shotsOn}` +
+          `:asked=${asked}:parked=${api.asked().length}`
         : 'UIGRAB_FAIL:' + r.error;
     } catch (e) {
       document.title = 'UIGRAB_FAIL:' + e.message;
+    } finally {
+      // The dock holds a status stream open for as long as it is listening, and
+      // a scripted run is finished — leaving it connected keeps the page's
+      // network busy, which is enough to stall a --dump-dom on its way out.
+      api.unlisten();
     }
   }
 }

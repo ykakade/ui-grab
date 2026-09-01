@@ -25,6 +25,8 @@ It is a dev-server plugin. No browser extension, no daemon, no MCP server.
 │  hover -> highlight    │ ───────────> │  /__ui-grab/queue         │
 │  click -> comment      │  same-origin │    ├─ find the source     │
 │  batch in localStorage │              │    └─ append to queue     │
+│                        │  SSE         │  /__ui-grab/events        │
+│  status + answers      │ <─────────── │    └─ what happened since │
 └────────────────────────┘              └────────────┬──────────────┘
         ▲  re-measures after the edit                ▼
         │                               .ui-grab/queue.json
@@ -111,6 +113,67 @@ described below.
 you use it. Reverting takes its own restore point first, so undoing one is a
 click. Files created after the batch are left alone.
 
+### Asking instead of changing
+
+The **`ask` toggle** turns the comment box into a question box. Same pick, same
+payload, but the item is marked `"kind": "ask"` and the agent is told to answer
+it rather than edit anything:
+
+```
+? why is this heading not centred?
+  h1.checkout-title
+  ┌────────────────────────────────────────────┐
+  │ The .checkout wrapper is `align-items:      │
+  │ flex-start`. Setting `text-align: center`   │
+  │ on the h1 alone will not move it.           │
+  └────────────────────────────────────────────┘
+```
+
+The answer arrives in two places: in Claude Code, at whatever length the
+question deserves, and back in the dock as a couple of sentences beside the
+element you clicked. Questions and changes mix freely in one batch — half of
+"make this bigger" starts as "why is this the size it is".
+
+A question is deliberately kept out of the verification loop. Nothing about the
+element is supposed to move, so re-measuring it would report `unchanged`, and
+"unchanged" is precisely how the learned map decides it was wrong about an
+element. Answering a question must not cost you a map entry.
+
+### Watching it happen
+
+Everything between **Send** and the edit happens outside the browser, and until
+you look at the terminal none of it is visible: whether a session was found,
+whether it is working, whether anything ever read the queue. The dock now shows
+a line of it.
+
+```
+● Woke Claude Code via tmux
+● Claude Code is working…
+● Applied 3 items
+⚠ No Claude Code session open in this project — run /grab
+```
+
+That last one is the reason this exists. A batch sent into a project with no
+session open used to look exactly like a batch being worked on.
+
+The server writes what it knows to `.ui-grab/activity.json` — a 60-entry ring
+buffer — and the dock reads it over `GET /__ui-grab/events` as an `EventSource`.
+A file rather than an emitter because the writers are separate processes: the
+dev server takes the batch, the Stop hook runs inside Claude Code, `/grab` is
+Claude editing the queue directly. None of them can call each other; all of them
+can append a line.
+
+Two of the events are not written by anyone, but noticed: the queue going from
+full to empty is what "applied" means, since `/grab` is Claude editing a file and
+there is no command anywhere to instrument. Session status comes from the same
+undocumented registry `wake` reads, so if its shape changes the status line goes
+quiet rather than throwing.
+
+The stream is held open only while the dock is open or something is outstanding.
+The extension polls the same log every two seconds instead — its page is on
+someone else's origin, so an `EventSource` from there could never reach the
+bridge.
+
 ## Zero-typing mode
 
 The queue is written asynchronously and MCP-style tools are pull-only, so
@@ -194,6 +257,8 @@ npx ui-grab-drain            # print the batch as text, for any agent
 npx ui-grab-drain --json     # or as JSON
 npx ui-grab-drain --fresh    # re-resolve every pointer against the files as they are now
 npx ui-grab-drain --clear    # empty the queue when you are done
+
+npx ui-grab-drain --answer <id> "..."   # reply to an item marked ask
 ```
 
 `npx ui-grab-install --agents` adds a short section to `AGENTS.md` telling an
@@ -241,6 +306,8 @@ your-project/
     queue.json           # pending picks. gitignored
     sent.json            # what each pick pointed at, pending a verdict
     batches.json         # restore points
+    activity.json        # what has happened since, for the dock's status line
+    answers.json         # replies to ask items, on their way back to the browser
     shots/               # crops, with the shot toggle on
 ```
 
@@ -428,12 +495,16 @@ g.pickAlso(document.querySelector('.btn-ghost'));  // one comment, two elements
 g.navigate('up');                                  // walk to the parent
 g.comment('make this 1.25x larger');
 g.add();
+g.setAsk(true); g.comment('why is this centred?'); g.add();   // a question
 g.edit(0, 'on second thought, 1.5x');
 g.move(0, 1);                                      // reorder
 await g.send();          // -> { ok: true, added: 1, pending: 1, batch: 'b...' }
 g.items();               // queued items
 g.watching();            // elements being checked after the edit
-g.state();               // { picking, open, pending, count, extra, shots, batch }
+g.asked();               // questions sent, with their answers once they land
+g.status();              // what the agent is doing, as shown in the dock
+g.unlisten();            // put down the status stream
+g.state();               // { picking, open, pending, count, extra, shots, ask, batch }
 ```
 
 ## Why not a Chrome extension
@@ -490,6 +561,8 @@ src/ingest.js         a batch from the wire to the queue file
 src/resolve.js        element -> source candidates, one pass per batch
 src/extract.js        the enclosing declaration, into a store shared by the batch
 src/map.js            confirmed element -> source, and how it self-heals
+src/activity.js       the status log, and the hub that fans it out
+src/answers.js        replies to the questions in a batch
 src/verify.js         the browser's verdict, and what it teaches the map
 src/snapshot.js       restore points and revert
 src/drain.js          reading the queue out, for any agent
@@ -504,7 +577,7 @@ extension/transport.js  the extension's half of the same HOST interface
 bridge/server.js      local HTTP server the extension posts batches to
 hooks/stop-hook.mjs   Stop hook for zero-typing mode
 bin/install-claude.js writes /grab and AGENTS.md, wires the hook
-bin/ui-grab-drain.js  prints a batch for any agent
+bin/ui-grab-drain.js  prints a batch for any agent, and takes answers back
 bin/ui-grab-bridge.js runs the bridge
 examples/demo         a small checkout page to try it on
 test/run.js           end to end: real vite server, real chrome, real files
@@ -520,7 +593,8 @@ npm test
 
 Boots a real Vite dev server, drives the picker in real headless Chrome, opens a
 real tmux pane to wake a session in, makes a real git repo to revert inside, and
-asserts on what lands on disk. 187 checks, covering the middleware and the
+asserts on what lands on disk. 219 checks, covering the middleware and the
 origin gate, source resolution and ranking, the shared source store, the learned
 map, verification, revert, both zero-typing modes, the Stop hook's block budget,
-and the Next.js adapter.
+the status log and the hub that fans it out, ask items and their answers, and
+the Next.js adapter.

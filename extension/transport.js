@@ -19,6 +19,33 @@ window.__UI_GRAB_HOST__ = {
   revert: (batch) =>
     chrome.runtime.sendMessage({ type: 'revert', batch }).catch((e) => ({ ok: false, error: e.message })),
 
+  // The page is on someone else's origin and the bridge is on 127.0.0.1, so an
+  // EventSource from here would never connect. The worker can reach the bridge,
+  // so the same log arrives a poll at a time instead of a frame at a time.
+  events: (onEvent) => {
+    const EVERY = 2000;
+    let since = 0;
+    let stopped = false;
+    let timer = null;
+
+    const tick = async () => {
+      if (stopped) return;
+      try {
+        const r = await chrome.runtime.sendMessage({ type: 'events', since });
+        if (r && r.ok) {
+          for (const e of r.events || []) {
+            since = Math.max(since, e.seq || 0);
+            onEvent(e);
+          }
+        }
+      } catch {}
+      if (!stopped) timer = setTimeout(tick, EVERY);
+    };
+
+    tick();
+    return () => { stopped = true; clearTimeout(timer); };
+  },
+
   load: () =>
     chrome.storage.local.get('items').then((d) => d.items || []).catch(() => []),
 

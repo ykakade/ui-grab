@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { GRAB_COMMAND } from './grab-command.js';
 import { createMiddleware, clientSource, clientTags, MOUNT } from './middleware.js';
+import { hubFor } from './activity.js';
 import { VERSION } from './version.js';
 
 /**
@@ -108,6 +109,7 @@ export default function uiGrab(opts = {}) {
       }
 
       const atQueue = resolveAt !== 'drain';
+      const hub = hubFor(root);
       server.middlewares.use(MOUNT, createMiddleware({
         root,
         queueFile,
@@ -115,8 +117,14 @@ export default function uiGrab(opts = {}) {
         source: source && atQueue,
         adaptive,
         screenshots: shots,
+        hub,
         log: (line) => logger.info?.(line),
       }));
+
+      // The hub's timers are unref'd, so a forgotten one cannot hold the
+      // process open — but a restarted dev server should not leave a watcher
+      // behind on the old root either.
+      server.httpServer?.on('close', () => hub.close());
     },
 
     transformIndexHtml: {

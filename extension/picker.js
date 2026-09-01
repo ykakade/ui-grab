@@ -11,6 +11,7 @@
 //     verify: (results) => Promise<{ ok }>,          // optional
 //     revert: (batch)   => Promise<{ ok, files }>,   // optional
 //     shot:   (rect)    => Promise<string|null>,     // optional, data: url
+//     events: (onEvent) => () => void,               // optional, returns close
 //     load:   ()        => Promise<item[]>,
 //     save:   (items)   => void,
 //     loadState / saveState: (key[, value]) => any,  // optional
@@ -36,6 +37,7 @@
   const SPEECH = window.SpeechRecognition || window.webkitSpeechRecognition;
   const VERIFY_EVERY = 1500;
   const VERIFY_WINDOW = 180_000;   // give up watching an element after 3 minutes
+  const MAX_ASKED = 12;            // answered questions kept on screen
 
   /* ------------------------------- extraction ------------------------------ */
 
@@ -204,6 +206,27 @@
       .ft { padding: 9px 11px; }
       .ft button { width: 100%; padding: 7px; font-size: 12px; }
       .hint { padding: 8px 11px; color: #8b93a7; line-height: 1.5; }
+      .status { display: none; align-items: center; gap: 7px; padding: 7px 11px;
+                border-bottom: 1px solid #2b303c; color: #8b93a7; font-size: 11px; }
+      .status.show { display: flex; }
+      .pip { width: 6px; height: 6px; border-radius: 50%; background: #6b7386; flex: none; }
+      .pip.work { background: #7c9cff; animation: pulse 1.1s ease-in-out infinite; }
+      .pip.good { background: #4ade80; }
+      .pip.warn { background: #f0b849; }
+      @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .3 } }
+      .status .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+                     white-space: nowrap; }
+      .asked { max-height: 190px; overflow-y: auto; }
+      .qa { padding: 8px 11px; border-bottom: 1px solid #2b303c; }
+      .qa .q { display: flex; gap: 6px; align-items: flex-start; }
+      .qa .q .mark { color: #c4b5fd; font-weight: 700; line-height: 1.4; }
+      .qa .q .txt { flex: 1; line-height: 1.4; }
+      .qa .el { color: #7c9cff; font-family: ui-monospace, Menlo, monospace; font-size: 10px;
+                margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .qa .a { margin-top: 5px; padding: 6px 8px; background: #0e1015; border-radius: 6px;
+               border: 1px solid #2b303c; line-height: 1.5; white-space: pre-wrap;
+               word-break: break-word; color: #cbd3e6; }
+      .qa .waiting { margin-top: 4px; color: #6b7386; font-style: italic; }
       .verify { padding: 8px 11px; border-top: 1px solid #2b303c; display: none;
                 align-items: center; gap: 8px; }
       .verify.show { display: flex; }
@@ -230,6 +253,7 @@
     <div class="toast"></div>
     <div class="dock">
       <div class="hd"><span class="dot"></span><b>UI Grab</b><span class="grow"></span>
+        <span class="tog ask" data-act="ask" title="ask about this element instead of changing it">ask</span>
         <span class="tog shot" data-act="shots" title="attach a crop of each element">shot</span>
         <span class="muted count"></span><span class="x" data-act="close">×</span></div>
       <div class="compose" style="display:none">
@@ -243,6 +267,9 @@
             <button class="primary" data-act="add">Add</button></div></div>
       </div>
       <div class="hint idle"></div>
+      <div class="status"><span class="pip"></span><span class="txt"></span>
+        <span class="x" data-act="dismiss-status">×</span></div>
+      <div class="asked"></div>
       <div class="list"></div>
       <div class="verify"><span class="grow vtext"></span>
         <button data-act="revert">Revert</button></div>
@@ -257,6 +284,8 @@
     hint: $('.hint'), list: $('.list'), ft: $('.ft'), send: $('[data-act="send"]'),
     badge: $('.badge'), toast: $('.toast'), mic: $('.mic'), nav: $('.nav'),
     shot: $('.shot'), verify: $('.verify'), vtext: $('.vtext'),
+    ask: $('.ask'), status: $('.status'), pip: $('.pip'), stext: $('.status .txt'),
+    asked: $('.asked'),
   };
 
   /* --------------------------------- state --------------------------------- */
@@ -267,7 +296,9 @@
     editing: null,                    // index of the queued item being reworded
     items: [], busy: false, enriching: [],
     shots: !!CFG.shots,
+    ask: false,                       // is the next comment a question?
     watch: [], batch: null, verdict: null,
+    asked: [], status: null,          // questions in flight, and what the agent is doing
   };
 
   const save = () => HOST.save(S.items);
@@ -320,6 +351,7 @@
     el.count.textContent = S.items.length ? `${S.items.length} queued` : '';
     el.shot.style.display = HOST.shot ? '' : 'none';
     el.shot.classList.toggle('on', S.shots);
+    el.ask.classList.toggle('on', S.ask);
     el.mic.style.display = SPEECH ? '' : 'none';
 
     const composing = !!S.pending || S.editing !== null;
@@ -329,16 +361,32 @@
       ? 'Hover an element and click it. <kbd>Shift</kbd>-click adds more to one comment. <kbd>Esc</kbd> to stop.'
       : `Picking off. <kbd>${CFG.hotkey}</kbd> to resume.`;
     el.nav.innerHTML = S.editing !== null ? 'Editing'
+      : S.ask ? 'Asking — nothing will be edited'
       : '<kbd>Alt</kbd>+arrows to walk the tree';
+    el.ta.placeholder = S.ask ? 'What do you want to know?' : 'What should change?';
     root.querySelector('[data-act="add"]').textContent = S.editing !== null ? 'Save' : 'Add';
 
     el.list.innerHTML = S.items
-      .map((it, i) => `<div class="item"><span class="n">${i + 1}</span><div class="body">
+      .map((it, i) => `<div class="item"><span class="n">${it.kind === 'ask' ? '?' : i + 1}</span><div class="body">
           <div class="t">${esc(label2(it))}${it.also?.length ? ` +${it.also.length}` : ''}</div>
           <div class="c" data-edit="${i}">${esc(it.comment)}</div></div>
           <span class="acts"><span data-mv="${i}:-1">↑</span><span data-mv="${i}:1">↓</span>
           <span data-edit="${i}">✎</span><span data-rm="${i}">×</span></span></div>`)
       .join('');
+
+    el.status.classList.toggle('show', !!S.status);
+    if (S.status) {
+      el.pip.className = 'pip ' + (S.status.tone || '');
+      el.stext.textContent = S.status.text;
+    }
+
+    el.asked.innerHTML = S.asked.map((q, i) => `<div class="qa">
+        <div class="q"><span class="mark">?</span><span class="txt">${esc(q.comment)}</span>
+          <span class="acts"><span data-dq="${i}">×</span></span></div>
+        <div class="el">${esc(q.label)}</div>
+        ${q.answer ? `<div class="a">${esc(q.answer)}</div>`
+                   : '<div class="waiting">waiting for an answer…</div>'}
+      </div>`).join('');
 
     const v = S.verdict;
     el.verify.classList.toggle('show', !!v);
@@ -353,7 +401,18 @@
     el.ft.style.display = S.items.length ? 'block' : 'none';
     el.send.disabled = S.busy;
     el.send.textContent = S.busy ? 'Sending…' : `Send ${S.items.length} to Claude Code`;
+
+    // Nothing to hear about once the dock is shut and nothing is outstanding.
+    if (S.open || S.watch.length || S.asked.some((q) => !q.answer)) listen();
+    else unlisten();
   }
+
+  const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
+
+  /** "2 changes and 1 question", for a batch that can be either or both. */
+  const describeBatch = (edits, asks) =>
+    [edits ? plural(edits, 'change') : '', asks ? plural(asks, 'question') : '']
+      .filter(Boolean).join(' and ');
 
   const ENT = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ENT[c]);
@@ -488,6 +547,7 @@
     if (!c) { el.ta.focus(); return; }
 
     const item = { ...S.pending, comment: c };
+    if (S.ask) item.kind = 'ask';
     if (S.extra.length) item.also = S.extra.slice();
     const rect = item.rect;
     S.items.push(item);
@@ -566,6 +626,76 @@
     render();
   }
 
+  // A question rather than an instruction. Sticky, because you are usually
+  // asking about two or three things at once, and per-item because a batch of
+  // "make this bigger" and "why is this 4px off" is a normal thing to send.
+  function setAsk(on) {
+    S.ask = !!on;
+    putState('ask', S.ask);
+    render();
+    if (S.pending) el.ta.focus();
+  }
+
+  /* --------------------------------- status --------------------------------- */
+  //
+  // Between Send and the edit, everything interesting happens outside the
+  // browser: a session is found or it is not, it starts working or it was
+  // already busy, something reads the queue or nothing ever does. The server
+  // knows all of that; this is the half that shows it.
+
+  // How each event reads in one line. `null` means it is not worth a row.
+  const STATUS = {
+    queued: (e) => ({ tone: 'work', text: e.n && e.asks === e.n
+      ? `Asked ${plural(e.n, 'question')} — waiting for an answer`
+      : `Queued ${e.n} — waiting for Claude Code` }),
+    woke: (e) => (e.woke
+      ? { tone: 'work', text: `Woke Claude Code via ${e.via}` }
+      : e.via === 'busy'
+        ? { tone: 'work', text: 'Claude Code is mid-turn — it will pick this up' }
+        : { tone: 'warn', text: e.via === 'none'
+            ? 'No Claude Code session open in this project — run /grab'
+            : `Could not wake anything (${e.via}) — run /grab` }),
+    session: (e) => (e.status === 'busy'
+      ? { tone: 'work', text: 'Claude Code is working…' }
+      // Absence is only news when a batch is waiting on it, and `woke` has
+      // already said so by then.
+      : e.status === 'none' ? null
+      : { tone: '', text: 'Claude Code is idle' }),
+    holding: () => ({ tone: 'work', text: 'Holding the turn open — keep clicking' }),
+    draining: (e) => ({ tone: 'work', text: `Reading ${plural(e.pending, 'item')}…` }),
+    applied: (e) => ({ tone: 'good', text: `Applied ${plural(e.n, 'item')}` }),
+    answer: () => null,              // the answer itself is the status
+  };
+
+  function onEvent(e) {
+    if (e.kind === 'answer') {
+      const q = S.asked.find((x) => x.id === e.id);
+      if (q) { q.answer = e.text; putState('asked', S.asked); render(); }
+      return;
+    }
+    const line = STATUS[e.kind] && STATUS[e.kind](e);
+    if (!line) return;
+    S.status = line;
+    render();
+  }
+
+  let closeEvents = null;
+
+  function listen() {
+    if (closeEvents || !HOST.events) return;
+    try { closeEvents = HOST.events(onEvent); } catch { closeEvents = null; }
+  }
+
+  // Worth having as an API and not only an internal: this holds a connection
+  // open for as long as the dock is, and a script driving the picker wants a
+  // way to put it down when it is finished.
+  function unlisten() {
+    if (!closeEvents) return;
+    const close = closeEvents;
+    closeEvents = null;
+    try { close(); } catch {}
+  }
+
   /* -------------------------------- dictation ------------------------------- */
 
   let rec = null;
@@ -611,7 +741,10 @@
   function watchAfterSend(items, batch) {
     if (!CFG.verify || !HOST.verify) return;
     S.batch = batch || null;
-    S.watch = items.map((it) => {
+    // A question is answered, not applied, so nothing about the element should
+    // move. Watching one would report "unchanged", and an element that did not
+    // change is how the map decides it had pointed at the wrong place.
+    S.watch = items.filter((it) => it.kind !== 'ask').map((it) => {
       const node = it.selector && document.querySelector(it.selector);
       return {
         id: it.id, selector: it.selector, route: it.route,
@@ -686,9 +819,22 @@
       if (!body || !body.ok) throw new Error((body && body.error) || 'send failed');
       const n = S.items.length;
       S.items = []; save();
-      open(false);
+
+      // Questions outlive the batch: the whole point of one is to still be on
+      // screen when the answer lands, beside the element it was asked about.
+      const asks = sent.filter((it) => it.kind === 'ask');
+      if (asks.length) {
+        S.asked = asks
+          .map((it) => ({ id: it.id, comment: it.comment, label: label2(it), answer: null }))
+          .concat(S.asked)
+          .slice(0, MAX_ASKED);
+        putState('asked', S.asked);
+      }
+
+      open(asks.length > 0);   // an answer is coming back here, so stay open for it
       watchAfterSend(sent, body.batch);
-      toast(`Sent ${n} change${n === 1 ? '' : 's'}${body.target ? ' → ' + body.target : ''} — run /grab`);
+      toast(`Sent ${describeBatch(n - asks.length, asks.length)}` +
+        `${body.target ? ' → ' + body.target : ''}${asks.length ? '' : ' — run /grab'}`);
       return { ok: true, ...body };
     } catch (e) {
       toast(`Send failed: ${e.message}`, true);
@@ -763,8 +909,16 @@
     if (ed !== null) return edit(Number(ed));
     const mv = attr('data-mv');
     if (mv !== null) { const [i, d] = mv.split(':').map(Number); return move(i, d); }
+    const dq = attr('data-dq');
+    if (dq !== null) {
+      S.asked.splice(Number(dq), 1);
+      putState('asked', S.asked);
+      return render();
+    }
     switch (attr('data-act')) {
       case 'close': return open(false);
+      case 'ask': return setAsk(!S.ask);
+      case 'dismiss-status': S.status = null; return render();
       case 'add': return add();
       case 'cancel': return cancel();
       case 'send': return send();
@@ -788,13 +942,16 @@
 
   window.__uiGrab = {
     toggle, open, setPicking, pick, pickAlso, add, cancel, remove, edit, move, send,
-    navigate, setShots, revert,
+    navigate, setShots, setAsk, revert, listen, unlisten,
     comment: (t) => { el.ta.value = t; },
     items: () => S.items.slice(),
     watching: () => S.watch.slice(),
+    asked: () => S.asked.slice(),
+    status: () => (S.status ? { ...S.status } : null),
     state: () => ({
       picking: S.picking, open: S.open, pending: !!S.pending, editing: S.editing,
-      count: S.items.length, extra: S.extra.length, shots: S.shots, batch: S.batch,
+      count: S.items.length, extra: S.extra.length, shots: S.shots, ask: S.ask,
+      batch: S.batch, asked: S.asked.length,
     }),
     version: CFG.version || 'dev',
   };
@@ -824,6 +981,8 @@
     getState('batch').then((b) => { if (b) { S.batch = b; render(); } });
   }
   getState('shots').then((v) => { if (typeof v === 'boolean') { S.shots = v; render(); } });
+  getState('ask').then((v) => { if (typeof v === 'boolean') { S.ask = v; render(); } });
+  getState('asked').then((v) => { if (Array.isArray(v) && v.length) { S.asked = v; render(); } });
 
   render();
   console.info(`[ui-grab] ready — press ${CFG.hotkey} to pick elements`);

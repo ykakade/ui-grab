@@ -15,6 +15,7 @@ import { lookup as mapLookup, mapKey } from './map.js';
 import { record as recordSent } from './verify.js';
 import { snapshot } from './snapshot.js';
 import { readQueue, writeQueue } from './queue.js';
+import { isAsk } from './answers.js';
 
 const MAX_MERGED = 6;
 
@@ -106,7 +107,10 @@ export function resolveItems(root, items, { resolve = true, source = true, adapt
     }
 
     const top = (out.candidates || [])[0];
-    if (top) {
+    // A question changes nothing, so there is no verdict coming for it. Left in
+    // the ledger it would sit unresolved forever, and an element that "did not
+    // change" is how the map decides it was wrong about one.
+    if (top && !isAsk(item)) {
       ledger.push({
         id: item.id, key: mapKey(item), file: top.file, line: top.line,
         mapped: top.matchedBy === 'map',

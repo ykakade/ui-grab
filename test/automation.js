@@ -20,6 +20,9 @@ import { normalize, loadConfig, saveConfig } from '../src/config.js';
 import { liveSessions, paneFor, projectSlug, wake, resumeArgs } from '../src/wake.js';
 import { resolveCandidates, resolveBatch } from '../src/resolve.js';
 import { fromLocalPage } from '../src/queue.js';
+import { emit, readActivity, since as sinceEvents, createHub, closeHubs } from '../src/activity.js';
+import { readAnswers, writeAnswer, isAsk } from '../src/answers.js';
+import { drainPrompt } from '../src/config.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ui-grab-auto-'));
@@ -148,7 +151,7 @@ if (!has('tmux')) {
     await sleep(400);
     const pane = execFileSync('tmux', ['capture-pane', '-t', SESSION, '-p'], { encoding: 'utf8' });
     ok('the prompt actually lands in the pane',
-      pane.includes('3 UI changes are queued'), pane.trim().split('\n').slice(-3).join(' | '));
+      pane.includes('3 UI items are queued'), pane.trim().split('\n').slice(-3).join(' | '));
   } finally {
     try { execFileSync('tmux', ['kill-session', '-t', SESSION], { stdio: 'ignore' }); } catch {}
   }
@@ -198,7 +201,7 @@ ok('resuming the live session, forked',
   logged.includes('--resume') && logged.includes(`sess-${process.pid}`) && logged.includes('--fork-session'),
   logged.join(' '));
 ok('with a prompt that names the queue',
-  logged.some((a) => a.includes('2 UI changes are queued')), logged.slice(-1)[0]);
+  logged.some((a) => a.includes('2 UI items are queued')), logged.slice(-1)[0]);
 
 // with resume off and tmux off there is nothing left to try
 const noWay = normalize({ mode: 'wake', wake: { tmux: false, resume: false } });
@@ -563,7 +566,7 @@ console.log('\ningest');
 
   const text = render(payload, { rel: '.ui-grab/queue.json' });
   ok('it renders for an agent with no slash commands',
-    text.includes('1 UI change') && text.includes('panel-title') && text.includes('tighter'),
+    text.includes('1 UI item') && text.includes('panel-title') && text.includes('tighter'),
     text.split('\n')[0]);
   ok('and says how to finish', text.includes('empty the queue'));
 
@@ -571,6 +574,135 @@ console.log('\ningest');
   ok('clearing empties it', readQueue(qf).items.length === 0);
   ok('an empty queue renders as a sentence, not a crash',
     render(drainPayload(iRoot, qf, {}), {}).includes('Nothing queued'));
+}
+
+
+// ---- 4n. the status stream ---------------------------------------------------
+//
+// Between Send and the edit, the browser is blind: it cannot see whether a
+// session was found, whether it is working, or whether anything ever read the
+// queue. The server can, and this is how it says so.
+console.log('\nactivity log');
+{
+  const aRoot = path.join(TMP, 'activity');
+  fs.mkdirSync(aRoot, { recursive: true });
+
+  ok('an empty log reads as empty, not as a crash', readActivity(aRoot).events.length === 0);
+
+  const first = emit(aRoot, 'queued', { n: 2, pending: 2 });
+  const second = emit(aRoot, 'woke', { woke: true, via: 'tmux' });
+  ok('events get monotonic sequence numbers', first.seq === 1 && second.seq === 2,
+    `${first.seq}, ${second.seq}`);
+  ok('and survive the round trip to disk',
+    readActivity(aRoot).events.map((e) => e.kind).join(',') === 'queued,woke');
+
+  const caught = sinceEvents(aRoot, 1);
+  ok('a picker catching up gets only what it missed',
+    caught.events.length === 1 && caught.events[0].kind === 'woke', JSON.stringify(caught));
+
+  // 60 is the cap. A dev session left running all afternoon must not grow this
+  // file without bound.
+  for (let i = 0; i < 70; i++) emit(aRoot, 'session', { status: i % 2 ? 'busy' : 'idle' });
+  const capped = readActivity(aRoot);
+  ok('the log is a ring buffer, not a diary', capped.events.length === 60, String(capped.events.length));
+  ok('and the sequence keeps counting past the cap', capped.seq === 72, String(capped.seq));
+}
+
+console.log('\nstatus hub');
+{
+  const hRoot = path.join(TMP, 'hub');
+  fs.mkdirSync(path.join(hRoot, '.ui-grab'), { recursive: true });
+  // No sessions to find: point discovery at a directory that does not exist, so
+  // the poll is deterministic instead of depending on this machine.
+  const hub = createHub(hRoot, { pollMs: 60, sessionPollMs: 60,
+    sessionsDir: path.join(hRoot, 'no-sessions') });
+
+  const seen = [];
+  const off = hub.subscribe((e) => seen.push(e));
+  emit(hRoot, 'holding', { seconds: 20 });
+  await sleep(300);
+  ok('a subscriber is handed events written by another process',
+    seen.some((e) => e.kind === 'holding'), JSON.stringify(seen.map((e) => e.kind)));
+
+  // The queue emptying is the only honest "the agent has been through this"
+  // signal: /grab is Claude editing the file directly, so there is no command
+  // anywhere to instrument.
+  const hQueue = path.join(hRoot, '.ui-grab/queue.json');
+  writeQueue(hQueue, { items: [{ id: 'h1', tag: 'button', comment: 'bigger' }], sources: {} });
+  await sleep(200);
+  writeQueue(hQueue, { items: [], sources: {} });
+  await sleep(300);
+  const applied = seen.find((e) => e.kind === 'applied');
+  ok('the queue emptying is reported as the batch being applied', !!applied && applied.n === 1,
+    JSON.stringify(seen.map((e) => e.kind)));
+
+  writeAnswer(hRoot, 'h1', 'because the container is flex-start');
+  await sleep(300);
+  const answered = seen.find((e) => e.kind === 'answer');
+  ok('an answer written by the agent reaches the browser',
+    !!answered && answered.id === 'h1' && /flex-start/.test(answered.text),
+    JSON.stringify(seen.map((e) => e.kind)));
+
+  off();
+  const quiet = seen.length;
+  emit(hRoot, 'holding', { seconds: 5 });
+  await sleep(250);
+  ok('unsubscribing actually stops the watcher', seen.length === quiet,
+    `${quiet} -> ${seen.length}`);
+  hub.close();
+}
+
+// ---- 4o. questions instead of instructions -----------------------------------
+console.log('\nask mode');
+{
+  const qRoot = path.join(TMP, 'ask');
+  fs.mkdirSync(qRoot, { recursive: true });
+  fs.writeFileSync(path.join(qRoot, 'index.html'),
+    '<html><body>\n<h1 class="headline">Checkout</h1>\n</body></html>\n');
+  const qQueue = path.join(qRoot, '.ui-grab/queue.json');
+
+  const out = ingest(qRoot, qQueue, [
+    { id: 'a1', tag: 'h1', classes: 'headline', text: 'Checkout', attrs: {},
+      comment: 'make this bigger' },
+    { id: 'a2', tag: 'h1', classes: 'headline', text: 'Checkout', attrs: {},
+      kind: 'ask', comment: 'why is this not centred?' },
+  ]);
+  ok('a question is queued like anything else', out.pending === 2);
+  ok('and keeps its kind through the queue file',
+    readQueue(qQueue).items.filter(isAsk).length === 1);
+  ok('a question still gets source candidates — it has to be answered from somewhere',
+    (readQueue(qQueue).items.find(isAsk).candidates || []).length > 0);
+
+  // Nothing about the element changes, so no verdict is ever coming. Scoring it
+  // would leave the entry unresolved, and "unchanged" is how the map decides it
+  // had been wrong about an element.
+  const ids = readSent(qRoot).map((s) => s.id);
+  ok('but it is kept out of the scoring ledger',
+    ids.includes('a1') && !ids.includes('a2'), JSON.stringify(ids));
+
+  const text = render(drainPayload(qRoot, qQueue), { rel: '.ui-grab/queue.json' });
+  ok('the drain output marks it ASK', /ASK/.test(text));
+  ok('and tells an agent how to answer it', text.includes('--answer a2'));
+
+  ok('the wake prompt says a batch of questions is not a batch of edits',
+    /answer every one of them without editing/.test(
+      drainPrompt(1, '.ui-grab/queue.json', [{ kind: 'ask' }])));
+  ok('and a mixed batch names both halves',
+    /apply the changes and answer the 1 item/.test(
+      drainPrompt(2, '.ui-grab/queue.json', [{ kind: 'ask' }, {}])));
+  ok('a batch with no questions reads as it always did',
+    /apply every item/.test(drainPrompt(2, '.ui-grab/queue.json', [{}, {}])));
+  // The old text told the agent to reset the file to a v1 shape, which the
+  // reader then hoisted back into v2 on the next read.
+  ok('and the reset it asks for matches the file format we actually write',
+    drainPrompt(1).includes('"version":2'));
+
+  writeAnswer(qRoot, 'a2', 'The container is flex-start; use justify-content: center.');
+  ok('an answer round-trips through disk',
+    readAnswers(qRoot).answers[0].text.includes('justify-content'));
+  writeAnswer(qRoot, 'a2', 'On reflection: text-align: center on the h1.');
+  ok('answering twice replaces rather than stacks',
+    readAnswers(qRoot).answers.length === 1 && /On reflection/.test(readAnswers(qRoot).answers[0].text));
 }
 
 // ---- 4m. the next.js adapter -------------------------------------------------
@@ -599,6 +731,28 @@ console.log('\nnext adapter');
     body: JSON.stringify({ items: [{ id: 'evil', comment: 'delete everything' }] }),
   }));
   ok('a cross-site POST is refused there too', evil.status === 403);
+
+  const polled = await (await GET(req('/__ui-grab/events?since=0'))).json();
+  ok('it serves the status log as a poll',
+    polled.ok && polled.events.some((e) => e.kind === 'queued'),
+    JSON.stringify(polled.events?.map((e) => e.kind)));
+
+  // EventSource reconnects by re-requesting the URL it was opened with, so the
+  // `since` on it is stale by then; Last-Event-ID is the current one.
+  const resumed = await (await GET(req('/__ui-grab/events?since=0',
+    { headers: { 'last-event-id': String(polled.seq) } }))).json();
+  ok('a reconnect resumes from Last-Event-ID, not the stale URL',
+    resumed.events.length === 0, JSON.stringify(resumed.events.map((e) => e.kind)));
+
+  const streamed = await GET(req('/__ui-grab/events', { headers: { accept: 'text/event-stream' } }));
+  ok('and as a stream when the browser asks for one',
+    streamed.headers.get('content-type') === 'text/event-stream');
+  {
+    const reader = streamed.body.getReader();
+    const first = new TextDecoder().decode((await reader.read()).value || new Uint8Array());
+    ok('whose backlog replays what already happened', first.includes('retry:'), first.slice(0, 60));
+    await reader.cancel();
+  }
 
   const client = await GET(req('/__ui-grab/client.js'));
   ok('it serves the picker', (await client.text()).includes('window.__uiGrab'));
@@ -651,6 +805,21 @@ const queued2 = await (await fetch(`${base}/queue`, {
 ok('wake mode reports what it tried', queued2.woke !== null && queued2.woke.via === 'none',
   JSON.stringify(queued2.woke));
 
+// The extension cannot hold an EventSource open to a bridge on another origin,
+// so it polls the same log instead.
+const events = await (await fetch(`${base}/events?since=0`)).json();
+ok('the bridge serves the status log too',
+  events.ok && events.events.some((e) => e.kind === 'queued'),
+  JSON.stringify(events.events?.map((e) => e.kind)));
+ok('and a poll from where we left off returns nothing new',
+  (await (await fetch(`${base}/events?since=${events.seq}`)).json()).events.length === 0);
+
+const evilEvents = await fetch(`${base}/events`, {
+  headers: { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' },
+});
+ok('the origin gate covers the status log as well', evilEvents.status === 403,
+  String(evilEvents.status));
+
 const evilPost = await fetch(`${base}/queue`, {
   method: 'POST',
   headers: { 'content-type': 'text/plain', origin: 'https://evil.example',
@@ -674,6 +843,7 @@ ok('but the extension still can',
   String(extHealth.headers.get('access-control-allow-origin')));
 
 bridge.server.close();
+closeHubs();
 fs.rmSync(TMP, { recursive: true, force: true });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -9,6 +9,7 @@ import { revert } from '../src/snapshot.js';
 import { GRAB_COMMAND } from '../src/grab-command.js';
 import { loadConfig, saveConfig, wakes } from '../src/config.js';
 import { readQueue, writeQueue, fromLocalPage } from '../src/queue.js';
+import { emit, hubFor } from '../src/activity.js';
 import { VERSION } from '../src/version.js';
 import { wake } from '../src/wake.js';
 
@@ -44,6 +45,8 @@ export function createBridge({ root, quiet = false, resolve = true, source = tru
     log(`  created ${path.relative(root, cmd)}`);
   }
 
+  const hub = hubFor(root);
+
   const server = http.createServer((req, res) => {
     // The extension and local dev pages, and nobody else — `*` here would let
     // any site you have open read the project path out of /health and post
@@ -58,7 +61,8 @@ export function createBridge({ root, quiet = false, resolve = true, source = tru
       res.writeHead(code, { 'content-type': 'application/json' });
       res.end(JSON.stringify(body));
     };
-    const url = (req.url || '/').split('?')[0];
+    const [url, search] = (req.url || '/').split('?');
+    const query = Object.fromEntries(new URLSearchParams(search || ''));
 
     if (req.method === 'OPTIONS') return res.writeHead(allowed ? 204 : 403).end();
     if (!allowed) return json(403, { ok: false, error: 'ui-grab only accepts picks from a local page' });
@@ -69,6 +73,13 @@ export function createBridge({ root, quiet = false, resolve = true, source = tru
         name, root, pending: readQueue(queueFile).items.length,
         config: loadConfig(root),
       });
+    }
+
+    // The status stream, polled rather than streamed: the extension's page is
+    // on someone else's origin, so its EventSource could never reach us here.
+    // Same log, same events, one fetch every couple of seconds.
+    if (url === '/events' && req.method === 'GET') {
+      return json(200, { ok: true, ...hub.poll(Number(query.since) || 0) });
     }
 
     if (url === '/config') {
@@ -107,6 +118,13 @@ export function createBridge({ root, quiet = false, resolve = true, source = tru
         }
         log(`  ${out.pending} pending in ${path.relative(root, queueFile)}`);
 
+        emit(root, 'queued', {
+          n: out.items.length,
+          pending: out.pending,
+          batch: out.batch,
+          asks: out.items.filter((i) => i.kind === 'ask').length,
+        });
+
         // The queue is only useful once something reads it. A busy session
         // will via its Stop hook; an idle one has to be poked.
         let woke = null;
@@ -117,8 +135,10 @@ export function createBridge({ root, quiet = false, resolve = true, source = tru
             log(woke.woke ? `  woke via ${woke.via}: ${woke.detail}`
               : woke.via === 'busy' ? `  ${woke.detail} is mid-turn — its Stop hook will drain this`
               : `  nothing woken: ${woke.detail}`);
+            emit(root, 'woke', woke);
           } catch (e) {
             log(`  wake failed: ${e.message}`);
+            emit(root, 'woke', { woke: false, via: 'error', detail: e.message });
           }
         }
 
@@ -164,7 +184,7 @@ export function createBridge({ root, quiet = false, resolve = true, source = tru
   }
 
   return {
-    server, listen, ensureCommand, root, name, queueFile,
+    server, listen, ensureCommand, root, name, queueFile, hub,
     readQueue: () => readQueue(queueFile),
     writeQueue: (q) => writeQueue(queueFile, q),
   };

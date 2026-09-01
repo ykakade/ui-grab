@@ -14,6 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig, waits, drainPrompt } from '../src/config.js';
+import { emit } from '../src/activity.js';
 
 const MAX_BLOCKS = Number(process.env.UI_GRAB_MAX_BLOCKS || 20);
 const POLL_MS = 250;
@@ -45,6 +46,10 @@ async function main() {
   // the session go idle, where only an external poke could reach it.
   const waitSec = Number(process.env.UI_GRAB_WAIT ?? cfg.waitSeconds) || 0;
   if (!items.length && waits(cfg) && waitSec > 0) {
+    // The browser has no way to know the turn is being held open for it, and
+    // "nothing is happening" and "you have a few seconds to keep clicking" look
+    // identical from there.
+    emit(cwd, 'holding', { seconds: waitSec });
     const until = Date.now() + waitSec * 1000;
     while (Date.now() < until) {
       await sleep(POLL_MS);
@@ -81,6 +86,7 @@ async function main() {
     fs.writeFileSync(stateFile, JSON.stringify(state));
   } catch {}
 
-  console.log(JSON.stringify({ decision: 'block', reason: drainPrompt(items.length, rel) }));
+  emit(cwd, 'draining', { pending: items.length, asks: items.filter((i) => i.kind === 'ask').length });
+  console.log(JSON.stringify({ decision: 'block', reason: drainPrompt(items.length, rel, items) }));
   process.exit(0);
 }

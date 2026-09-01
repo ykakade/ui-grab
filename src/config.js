@@ -58,11 +58,25 @@ export function saveConfig(root, patch) {
 export const waits = (cfg) => cfg.mode === 'wait' || cfg.mode === 'both';
 export const wakes = (cfg) => cfg.mode === 'wake' || cfg.mode === 'both';
 
-/** The one sentence that tells Claude Code to drain the queue. */
-export function drainPrompt(n, rel = '.ui-grab/queue.json') {
+/**
+ * The one sentence that tells Claude Code to drain the queue.
+ *
+ * `items` is optional and only used to notice questions in the batch — the
+ * callers that have the queue in hand pass it, and `wake` only ever has a count.
+ */
+export function drainPrompt(n, rel = '.ui-grab/queue.json', items = null) {
+  const asks = Array.isArray(items) ? items.filter((i) => i && i.kind === 'ask').length : 0;
+  const what = asks === n
+    ? `${n} question${n === 1 ? '' : 's'} about the UI ${n === 1 ? 'is' : 'are'}`
+    : `${n} UI item${n === 1 ? '' : 's'} ${n === 1 ? 'is' : 'are'}`;
+  const how = asks === 0
+    ? 'apply every item'
+    : asks === n
+      ? 'answer every one of them without editing'
+      : `apply the changes and answer the ${asks} item${asks === 1 ? '' : 's'} marked "kind": "ask" without editing`;
+
   return (
-    `${n} UI change${n === 1 ? '' : 's'} ${n === 1 ? 'is' : 'are'} queued in ${rel} ` +
-    `from the browser. Read that file, apply every item, then reset it to ` +
-    `{"version":1,"items":[]} before finishing.`
+    `${what} queued in ${rel} from the browser. Read that file, ${how}, ` +
+    `then reset it to {"version":2,"items":[],"sources":{}} before finishing.`
   );
 }

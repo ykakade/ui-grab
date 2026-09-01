@@ -12,6 +12,8 @@ dist
 .ui-grab/queue.blocks.json
 .ui-grab/sent.json
 .ui-grab/batches.json
+.ui-grab/activity.json
+.ui-grab/answers.json
 .ui-grab/shots/
 
 .DS_Store

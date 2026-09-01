@@ -46,6 +46,38 @@ window.__UI_GRAB_HOST__ = (() => {
     verify: (results) => post(at('verify'), { results }),
     revert: (batch) => post(at('revert'), { batch }),
 
+    // Same origin as the page, so the picker can just hold a stream open and
+    // let EventSource handle the reconnecting. `since` is carried across a
+    // reconnect by the browser as Last-Event-ID; we pass it on the URL as well
+    // so a fresh page still catches up on what it missed.
+    events: (onEvent) => {
+      if (typeof EventSource !== 'function') return () => {};
+      let es = null;
+      let closed = false;
+      let seen = 0;
+
+      const open = () => {
+        if (closed) return;
+        es = new EventSource(at('events') + (seen ? `?since=${seen}` : ''));
+        es.onmessage = (m) => {
+          let e;
+          try { e = JSON.parse(m.data); } catch { return; }
+          if (e.seq) seen = Math.max(seen, e.seq);
+          onEvent(e);
+        };
+        // EventSource retries on its own, but not after the server restarts
+        // mid-stream — which, on a dev server, is most of the time.
+        es.onerror = () => {
+          if (closed || es.readyState !== EventSource.CLOSED) return;
+          es.close();
+          setTimeout(open, 2000);
+        };
+      };
+
+      open();
+      return () => { closed = true; try { es && es.close(); } catch {} };
+    },
+
     shot: async (rect) => {
       if (!navigator.mediaDevices?.getDisplayMedia) return null;
       await surface();

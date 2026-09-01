@@ -8,6 +8,7 @@ import path from 'node:path';
 import { readQueue, writeQueue } from './queue.js';
 import { resolveItems } from './ingest.js';
 import { record as recordSent } from './verify.js';
+import { isAsk } from './answers.js';
 
 /**
  * The queue, resolved and written back.
@@ -44,17 +45,28 @@ export function render(payload, { rel = '.ui-grab/queue.json' } = {}) {
   const { items, sources } = payload;
   if (!items.length) return `Nothing queued in ${rel}.`;
 
+  const asks = items.filter(isAsk).length;
   const out = [];
-  out.push(`${items.length} UI change${items.length === 1 ? '' : 's'} queued from the browser.`);
+  out.push(`${items.length} UI item${items.length === 1 ? '' : 's'} queued from the browser` +
+    (asks ? ` (${asks} of them question${asks === 1 ? '' : 's'}).` : '.'));
   out.push('');
   out.push('Apply each one to the element it points at. Candidates are ranked guesses at');
   out.push('where the element is written, which is often not where its styling lives — read');
   out.push('the file before editing, and prefer one coherent change over one patch per item.');
+  if (asks) {
+    out.push('');
+    out.push('An item marked ASK is a question, not a change. Do not edit anything for it —');
+    out.push('answer it, and send the answer back to the browser so it appears beside the');
+    out.push('element that was picked:');
+    out.push('');
+    out.push('  npx ui-grab-drain --answer <id> "your answer"');
+  }
   out.push('');
 
   items.forEach((it, n) => {
-    out.push(`${n + 1}. ${el(it)}  ${it.route || ''}`.trimEnd());
+    out.push(`${n + 1}. ${isAsk(it) ? 'ASK  ' : ''}${el(it)}  ${it.route || ''}`.trimEnd());
     out.push(`   "${(it.comment || '').replace(/\s+/g, ' ')}"`);
+    if (isAsk(it)) out.push(`   answer with: npx ui-grab-drain --answer ${it.id} "..."`);
     for (const also of it.also || []) out.push(`   + also ${el(also)}  ${also.selector || ''}`.trimEnd());
     for (const c of it.candidates || []) {
       out.push(`   → ${c.file}:${c.line}  [${c.matchedBy}${c.el ? ` for #${c.el + 1}` : ''}]` +
@@ -80,6 +92,7 @@ export function render(payload, { rel = '.ui-grab/queue.json' } = {}) {
     out.push('');
   }
 
+  if (asks) out.push('Answer every ASK item before clearing the queue — clearing it ends the batch.');
   out.push(`When you are done, empty the queue: write {"version":2,"items":[],"sources":{}} to ${rel}`);
   return out.join('\n');
 }
