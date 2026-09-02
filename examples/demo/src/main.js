@@ -60,7 +60,7 @@ if (new URLSearchParams(location.search).has('uigrabtest')) {
       const r = await api.send();
       document.title = r.ok
         ? `UIGRAB_OK:${r.added}:watch=${api.watching().length}:shots=${shotsOff && shotsOn}` +
-          `:asked=${asked}:parked=${api.asked().length}`
+          `:asked=${asked}:parked=${api.asked().length}:inflight=${api.state().inflight}`
         : 'UIGRAB_FAIL:' + r.error;
     } catch (e) {
       document.title = 'UIGRAB_FAIL:' + e.message;

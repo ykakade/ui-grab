@@ -254,6 +254,11 @@ if (e2e) {
   ok('but not the question — nothing about it will move', /asked=1/.test(pageTitle) &&
     !/watch=5/.test(pageTitle), pageTitle);
   ok('the question stays on screen waiting for its answer', /parked=1/.test(pageTitle), pageTitle);
+  // A batch of plain changes closes the dock and, where the host cannot verify,
+  // leaves nothing being watched — which used to drop the status stream before
+  // the first event arrived, on exactly the batch that needed it.
+  ok('a sent batch keeps the picker listening for what happens to it',
+    /inflight=true/.test(pageTitle), pageTitle);
   const sent = JSON.parse(fs.readFileSync(path.join(DEMO, '.ui-grab/sent.json'), 'utf8'));
   const scored = new Set(sent.sent.map((s) => s.id));
   ok('and the server knows which pointer to score for each of them',

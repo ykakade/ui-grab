@@ -156,6 +156,10 @@ a line of it.
 That last one is the reason this exists. A batch sent into a project with no
 session open used to look exactly like a batch being worked on.
 
+Hitting Send closes the dock, which is precisely when there is something to
+report, so the corner badge carries the line until the batch lands and for a
+few seconds after — long enough to read the one that says it worked.
+
 The server writes what it knows to `.ui-grab/activity.json` — a 60-entry ring
 buffer — and the dock reads it over `GET /__ui-grab/events` as an `EventSource`.
 A file rather than an emitter because the writers are separate processes: the
@@ -169,10 +173,13 @@ there is no command anywhere to instrument. Session status comes from the same
 undocumented registry `wake` reads, so if its shape changes the status line goes
 quiet rather than throwing.
 
-The stream is held open only while the dock is open or something is outstanding.
-The extension polls the same log every two seconds instead — its page is on
-someone else's origin, so an `EventSource` from there could never reach the
-bridge.
+The stream is held open while the dock is open, while a question is unanswered,
+and for as long as a sent batch has not landed — not merely while an element is
+being re-measured, since `verify: false`, a host without verification, or a
+selector that no longer resolves all leave nothing to re-measure on exactly the
+batch you wanted the status for. The extension polls the same log every two
+seconds instead: its page is on someone else's origin, so an `EventSource` from
+there could never reach the bridge.
 
 ## Zero-typing mode
 
@@ -504,7 +511,8 @@ g.watching();            // elements being checked after the edit
 g.asked();               // questions sent, with their answers once they land
 g.status();              // what the agent is doing, as shown in the dock
 g.unlisten();            // put down the status stream
-g.state();               // { picking, open, pending, count, extra, shots, ask, batch }
+g.state();               // { picking, open, pending, count, extra, shots, ask,
+                         //   batch, asked, inflight }
 ```
 
 ## Why not a Chrome extension
@@ -593,7 +601,7 @@ npm test
 
 Boots a real Vite dev server, drives the picker in real headless Chrome, opens a
 real tmux pane to wake a session in, makes a real git repo to revert inside, and
-asserts on what lands on disk. 219 checks, covering the middleware and the
+asserts on what lands on disk. 221 checks, covering the middleware and the
 origin gate, source resolution and ranking, the shared source store, the learned
 map, verification, revert, both zero-typing modes, the Stop hook's block budget,
 the status log and the hub that fans it out, ask items and their answers, and

@@ -38,6 +38,8 @@
   const VERIFY_EVERY = 1500;
   const VERIFY_WINDOW = 180_000;   // give up watching an element after 3 minutes
   const MAX_ASKED = 12;            // answered questions kept on screen
+  const STATUS_WINDOW = 180_000;   // stop listening for a batch's fate after 3 minutes
+  const STATUS_LINGER = 6000;      // how long "Applied 3 items" stays up afterwards
 
   /* ------------------------------- extraction ------------------------------ */
 
@@ -299,6 +301,7 @@
     ask: false,                       // is the next comment a question?
     watch: [], batch: null, verdict: null,
     asked: [], status: null,          // questions in flight, and what the agent is doing
+    inflight: 0, settled: 0,          // when the last batch went out, and when it landed
   };
 
   const save = () => HOST.save(S.items);
@@ -345,8 +348,13 @@
 
   function render() {
     el.dock.classList.toggle('open', S.open);
-    el.badge.classList.toggle('show', !S.open && S.items.length > 0);
-    el.badge.innerHTML = `UI Grab <b>${S.items.length}</b> queued`;
+    // The dock closes on Send, which is exactly when there is something to
+    // report — so the badge carries the status until the batch is done with.
+    const badgeStatus = !S.items.length && S.status && watching();
+    el.badge.classList.toggle('show', !S.open && (S.items.length > 0 || !!badgeStatus));
+    el.badge.innerHTML = badgeStatus
+      ? `<b>●</b> ${esc(S.status.text)}`
+      : `UI Grab <b>${S.items.length}</b> queued`;
     el.dot.classList.toggle('on', S.picking);
     el.count.textContent = S.items.length ? `${S.items.length} queued` : '';
     el.shot.style.display = HOST.shot ? '' : 'none';
@@ -403,9 +411,25 @@
     el.send.textContent = S.busy ? 'Sending…' : `Send ${S.items.length} to Claude Code`;
 
     // Nothing to hear about once the dock is shut and nothing is outstanding.
-    if (S.open || S.watch.length || S.asked.some((q) => !q.answer)) listen();
+    if (S.open || watching()) listen();
     else unlisten();
   }
+
+  /**
+   * Is a batch still out there? Verification is the obvious answer but not a
+   * sufficient one: `verify: false`, a host with no verify at all, or a pick
+   * whose selector no longer resolves all leave the watch list empty, and a
+   * batch of plain changes closes the dock the moment it is sent. Without the
+   * window below, that is a stream dropped before the first event arrives —
+   * the exact case the status line exists for.
+   */
+  const watching = () =>
+    S.watch.length ||
+    S.asked.some((q) => !q.answer) ||
+    (S.inflight && Date.now() - S.inflight < STATUS_WINDOW) ||
+    // "Applied 3 items" is the line worth waiting for; hiding it the instant it
+    // arrives means the only one you never get to read.
+    (S.settled && Date.now() - S.settled < STATUS_LINGER);
 
   const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
 
@@ -673,6 +697,12 @@
       if (q) { q.answer = e.text; putState('asked', S.asked); render(); }
       return;
     }
+    // The batch has landed; nothing further is coming for it.
+    if (e.kind === 'applied') {
+      S.inflight = 0;
+      S.settled = Date.now();
+      setTimeout(() => { S.settled = 0; render(); }, STATUS_LINGER + 50);
+    }
     const line = STATUS[e.kind] && STATUS[e.kind](e);
     if (!line) return;
     S.status = line;
@@ -819,6 +849,8 @@
       if (!body || !body.ok) throw new Error((body && body.error) || 'send failed');
       const n = S.items.length;
       S.items = []; save();
+      S.inflight = Date.now();
+      S.settled = 0;
 
       // Questions outlive the batch: the whole point of one is to still be on
       // screen when the answer lands, beside the element it was asked about.
@@ -951,7 +983,7 @@
     state: () => ({
       picking: S.picking, open: S.open, pending: !!S.pending, editing: S.editing,
       count: S.items.length, extra: S.extra.length, shots: S.shots, ask: S.ask,
-      batch: S.batch, asked: S.asked.length,
+      batch: S.batch, asked: S.asked.length, inflight: !!S.inflight,
     }),
     version: CFG.version || 'dev',
   };

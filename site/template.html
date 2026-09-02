@@ -318,10 +318,10 @@
   <div class="wrap hero">
     <h1>Point at it. Say <em>what's wrong</em>.</h1>
     <p class="lede">
-      A Vite dev plugin. Click elements in your running app, type what should change,
-      batch them up, hit Send — and Claude Code picks up the batch with
-      <strong>the file and line each one probably lives on already attached</strong>.
-      No extension, no daemon, no MCP server.
+      A Vite dev plugin. Click elements in your running app, type what should change —
+      or ask what's going on — batch them up, hit Send, and Claude Code picks the batch
+      up with <strong>the file and line each one probably lives on already attached</strong>.
+      It reports back as it goes. No extension, no daemon, no MCP server.
     </p>
     <div class="cta">
       <a class="btn primary" href="https://github.com/ykakade/ui-grab">
@@ -342,6 +342,14 @@
         <strong>Send</strong>. Instead of writing to a queue file, this page shows you the payload
         that would have landed in it.
       </p>
+      <p class="snote">
+        Try the <span class="inline-code">ask</span> toggle in the dock's header too: it turns the
+        comment box into a question box, and the item goes out marked
+        <span class="inline-code">"kind": "ask"</span> for the agent to answer rather than edit.
+        After you hit Send, watch the dock — the status line and the answer that lands under your
+        question are the real thing, replaying the sequence a dev server would produce. This page
+        has no agent behind it, so the answer itself is canned.
+      </p>
 
       <div class="split">
         <div class="panel">
@@ -356,6 +364,7 @@
             <span><kbd>hover</kbd> highlight</span>
             <span><kbd>click</kbd> select</span>
             <span><kbd>Enter</kbd> add to batch</span>
+            <span><kbd>ask</kbd> question, not change</span>
             <span><kbd>Esc</kbd> back out</span>
           </div>
         </div>
@@ -402,13 +411,23 @@
       </p>
       <pre class="term">
 <span class="c">$</span> npm run dev
-  <span class="u">ui-grab</span>  queued 2 changes (2 pending) → .ui-grab/queue.json
+  <span class="u">ui-grab</span>  queued 3 items (3 pending) → .ui-grab/queue.json
+  <span class="u">ui-grab</span>  woke via tmux: claude in %3
 
 <span class="c">&gt;</span> <span class="u">/grab</span>
   <span class="c">⏵</span> Read .ui-grab/queue.json
   <span class="c">⏵</span> Update index.html          <span class="c">button#place-order — 1.25×, proportions kept</span>
   <span class="c">⏵</span> Update src/style.css       <span class="c">.checkout-title line-height 1.35 → 1.15</span>
-  <span class="g">✓</span> Applied 2 changes, queue cleared</pre>
+  <span class="c">⏵</span> Bash ui-grab-drain --answer <span class="c">g4k2f — "why is this not centred?"</span>
+  <span class="g">✓</span> Applied 2 changes, answered 1, queue cleared</pre>
+
+      <p class="snote">
+        Meanwhile the dock says what is happening to it —
+        <em>woke Claude Code via tmux</em>, <em>working…</em>, <em>applied 3 items</em>, or
+        <em>no session open in this project</em>, which is the one that used to look exactly
+        like everything working. The answer to a question arrives in both places: in the
+        terminal at whatever length it deserves, and back under the element you asked about.
+      </p>
 
       <table class="modes">
         <thead><tr><th>mode</th><th>what happens when you hit Send</th></tr></thead>
@@ -436,6 +455,17 @@
           <span class="chip">local only</span>
           <h3>The queue is instructions</h3>
           <p>Whatever lands in it is what an agent goes on to do, so the endpoint takes writes only from a page served locally — a cross-site POST is refused outright.</p>
+        </div>
+        <div class="card">
+          <span class="chip">questions</span>
+          <h3>Not every pick is an edit</h3>
+          <p>Half of <em>make this bigger</em> starts as <em>why is this the size it is</em>. An item marked <span class="inline-code">ask</span> gets answered, not applied, and questions and changes mix freely in one batch.</p>
+          <p>A question is kept out of the verification pass on purpose: nothing about the element should move, and <em>unchanged</em> is exactly how the learned map decides it was wrong about one.</p>
+        </div>
+        <div class="card">
+          <span class="chip">status</span>
+          <h3>A file, not a socket</h3>
+          <p>The writers are separate processes — the dev server takes the batch, the Stop hook runs inside Claude Code, <span class="inline-code">/grab</span> is Claude editing the queue directly. None of them can call each other, so each appends to a small ring buffer the dock reads over an <span class="inline-code">EventSource</span>.</p>
         </div>
       </div>
     </section>
@@ -647,7 +677,7 @@ body {
   function show(items, example = false) {
     const queuedAt = new Date().toISOString();
     const payload = {
-      version: 1,
+      version: 2,
       items: items.map((it) => {
         const candidates = resolve(it);
         // The fields the plugin keeps, in the order it writes them.
@@ -657,9 +687,15 @@ body {
           ...(Object.keys(it.attrs || {}).length ? { attrs: it.attrs } : {}),
           styles: it.styles, rect: it.rect,
           ancestors: it.ancestors, children: it.children,
+          // Present only on a question, which the agent answers instead of
+          // editing. Absent is the common case and costs nothing to send.
+          ...(it.kind ? { kind: it.kind } : {}),
           comment: it.comment, queuedAt, candidates,
         };
       }),
+      // Source blocks belong to the batch rather than to any one item. Nothing
+      // extracts them in the browser, so this stays empty here.
+      sources: {},
     };
     lastJSON = JSON.stringify(payload, null, 2);
     wrap.innerHTML = '<pre id="payload">' + colorize(lastJSON) + '</pre>';
@@ -702,6 +738,7 @@ body {
   // write into the same frame leaves window.__uiGrab set from the first — and
   // the picker's re-entry guard then makes it a silent no-op with no dock.
   function boot() {
+    if (boot.stop) boot.stop();
     const old = document.getElementById('stage');
     const frame = document.createElement('iframe');
     frame.id = 'stage';
@@ -719,6 +756,34 @@ body {
     const w = frame.contentWindow;
     let mem = [];
     w.__UI_GRAB_CFG = { hotkey: 'Alt+Shift+G', badge: true, version: 'demo' };
+
+    // The status stream. On a real project the server writes what it knows to
+    // .ui-grab/activity.json and the dock reads it over an EventSource; there
+    // is no server here, so this plays back the sequence one would produce.
+    // Everything below the ANSWER line is real — the picker has no idea these
+    // events came from a timer.
+    let emit = null;
+    let seq = 0;
+    let timers = [];
+    const ANSWER =
+      'On a real project this is Claude’s reply, sent back by ' +
+      '`ui-grab-drain --answer`. This page has no agent behind it, so the ' +
+      'answer is canned — the panel it lands in is not.';
+
+    const timeline = (items) => {
+      const asks = items.filter((it) => it.kind === 'ask');
+      const at = (ms, kind, detail) => timers.push(setTimeout(() => {
+        emit && emit({ seq: ++seq, at: Date.now(), kind, ...detail });
+      }, ms));
+
+      at(0, 'queued', { n: items.length, asks: asks.length, pending: items.length });
+      at(700, 'woke', { woke: true, via: 'tmux', detail: 'claude in %3' });
+      at(1600, 'session', { status: 'busy' });
+      asks.forEach((it, i) => at(3200 + i * 400, 'answer', { id: it.id, text: ANSWER }));
+      at(3400 + asks.length * 400, 'applied', { n: items.length });
+      at(4400 + asks.length * 400, 'session', { status: 'idle' });
+    };
+
     // The picker's HOST interface. In the plugin, `send` POSTs to the dev
     // server; here it hands the batch to the panel on the right instead.
     w.__UI_GRAB_HOST__ = {
@@ -728,9 +793,18 @@ body {
       save: (items) => { mem = items; },
       send: async (items) => {
         show(items);
+        timeline(items);
         return { ok: true, added: items.length, pending: items.length };
       },
+      events: (onEvent) => {
+        emit = onEvent;
+        return () => { emit = null; };
+      },
     };
+
+    // A reset mid-timeline would otherwise fire the old batch's events into the
+    // new frame's dock.
+    boot.stop = () => { timers.forEach(clearTimeout); timers = []; emit = null; };
 
     const s = d.createElement('script');
     s.textContent = PICKER;
