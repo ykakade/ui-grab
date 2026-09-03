@@ -4,42 +4,17 @@
 [![npm](https://img.shields.io/npm/v/vite-plugin-ui-grab.svg)](https://www.npmjs.com/package/vite-plugin-ui-grab)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Click an element in your running app, say what should change, batch a few up,
-send them to Claude Code.
+Point at what's wrong. Claude Code fixes it.
 
-**[Try the picker in your browser](https://ykakade.github.io/ui-grab/)**. It is
-the real thing running on a throwaway page, and it shows you the payload it
-produces.
+Click elements in your running app, say what should change, batch them up, hit
+Send. Claude Code picks the batch up with the file and line already attached.
 
-Instead of switching to your terminal and typing *"make the primary button on
-the checkout screen a bit bigger, and tighten the heading leading, and..."*, you
-click the button, type "bigger", click the heading, type "tighter leading", and
-hit **Send**. Then run `/grab`, or turn on automatic mode and skip even that.
+**[Try the picker →](https://ykakade.github.io/ui-grab/)** — the real thing, on a
+throwaway page, showing you the payload it produces.
 
-It is a dev-server plugin. No browser extension, no daemon, no MCP server.
+A dev-server plugin. No extension, no daemon, no MCP server.
 
-```
-  browser (dev only)                          your repo
-┌────────────────────────┐              ┌───────────────────────────┐
-│ picker overlay         │  POST        │ dev server middleware     │
-│  hover -> highlight    │ ───────────> │  /__ui-grab/queue         │
-│  click -> comment      │  same-origin │    ├─ find the source     │
-│  batch in localStorage │              │    └─ append to queue     │
-│                        │  SSE         │  /__ui-grab/events        │
-│  status + answers      │ <─────────── │    └─ what happened since │
-└────────────────────────┘              └────────────┬──────────────┘
-        ▲  re-measures after the edit                ▼
-        │                               .ui-grab/queue.json
-        │                                            ▲
-        │                               ┌────────────┴──────────────┐
-        └─────────── verdict ───────────│ Claude Code               │
-                                        │  /grab     -> read, apply │
-                                        │  wait mode -> hold a turn │
-                                        │  wake mode -> poke if idle│
-                                        └───────────────────────────┘
-```
-
-## Install
+## Quick start
 
 ```bash
 npm i -D vite-plugin-ui-grab
@@ -49,75 +24,57 @@ npm i -D vite-plugin-ui-grab
 // vite.config.js
 import uiGrab from 'vite-plugin-ui-grab';
 
-export default {
-  plugins: [uiGrab()],
-};
+export default { plugins: [uiGrab()] };
 ```
 
-That is the whole setup. The plugin only runs under `vite dev` (`apply: 'serve'`),
-so nothing reaches production. On first start it writes `.claude/commands/grab.md`
-if you do not already have one.
+That is the whole setup. It runs only under `vite dev`, so nothing reaches
+production, and it writes `.claude/commands/grab.md` on first start if you do
+not already have one. Not on Vite? See [Next.js](#nextjs).
 
-Using Next.js instead? See [Next.js](#nextjs) below.
+## How it works
 
-## Use it
-
-1. `npm run dev`, open the app.
-2. Press **Alt+Shift+G**. The cursor becomes a crosshair.
-3. Hover for a highlight and a `tag.class  132×35` label. Click to select.
-4. Type what should change. **Enter** adds it, **Shift+Enter** for a newline.
-5. Keep going. Other routes are fine; the queue lives in `localStorage` and
-   survives reloads and HMR.
-6. Hit **Send N to Claude Code**.
-7. In Claude Code: `/grab`. Or nothing at all, in `wait`/`wake` mode.
+1. `npm run dev`, then press **Alt+Shift+G**. The cursor becomes a crosshair.
+2. Hover to highlight, click to select.
+3. Type what should change. **Enter** adds it to the batch.
+4. Repeat. Other routes are fine — the queue lives in `localStorage`.
+5. Hit **Send N to Claude Code**, then run `/grab`. Or [neither](#zero-typing-modes).
 
 **Esc** backs out one level at a time: cancel the comment, stop picking, close
-the dock. When the dock is closed with items queued, a small badge sits in the
-corner so you do not forget them.
+the dock. A corner badge remembers items queued behind a closed dock.
 
 ### Picking
 
-**Alt + arrow keys** walk the DOM from what you have selected: up to the parent,
-down to the first child, sideways through siblings. Half of "make this bigger"
-turns out to be about the parent, and a parent is usually impossible to hover
-because its children cover it. Your comment stays in the box while you move.
-
-**Shift-click** adds another element to the comment you are writing, for when
-you mean "these should line up" rather than anything about one of them alone.
-
-**Click a queued comment** to reword it; the arrows beside it reorder the batch.
-
-**The mic button** dictates instead of typing, where the browser supports it.
-
-**The `shot` toggle** attaches a cropped screenshot of each element. Off by
-default, and one permission prompt for the session rather than one per pick.
-Crops land in `.ui-grab/shots/`; the queue carries the path, not the image.
+- **Alt + arrows** walk the DOM — parent, first child, siblings. Half of "make
+  this bigger" is about a parent you cannot hover, because its children cover it.
+- **Shift-click** adds another element to the same comment, for "these should
+  line up".
+- **Click a queued comment** to reword it; the arrows beside it reorder the batch.
+- **The mic button** dictates instead of typing, where the browser supports it.
+- **The `shot` toggle** attaches a cropped screenshot per element. Off by
+  default — it costs one screen-capture prompt per session. Crops land in
+  `.ui-grab/shots/`; the queue carries the path, not the image.
 
 ### After the edit
 
-The picker remembers what every element looked like when it went out. Once the
-agent has been through, it measures them again and reports which ones actually
-moved:
+The picker remembers what each element looked like when it went out, measures
+them again once the agent is done, and reports which ones actually moved:
 
 ```
 2 changed · 1 unchanged        [Revert]
 ```
 
-An element that did not change means the edit landed somewhere else. That is the
-only signal here that knows whether the source lookup was right. It costs the
-agent nothing, since the measuring happens in the browser, and it feeds the map
-described below.
+`unchanged` means the edit landed somewhere else — the only signal here that
+knows whether the source lookup was right, and it costs the agent nothing.
 
-**Revert** puts back every file the batch touched. The restore point comes from
-`git stash create` when the batch is queued, which is free and invisible until
-you use it. Reverting takes its own restore point first, so undoing one is a
-click. Files created after the batch are left alone.
+**Revert** restores every file the batch touched, from a `git stash create`
+taken when the batch was queued. Reverting takes its own restore point first.
+Files created after the batch are left alone.
 
 ### Asking instead of changing
 
 The **`ask` toggle** turns the comment box into a question box. Same pick, same
-payload, but the item is marked `"kind": "ask"` and the agent is told to answer
-it rather than edit anything:
+payload, but the item goes out marked `"kind": "ask"` and the agent answers it
+instead of editing:
 
 ```
 ? why is this heading not centred?
@@ -129,22 +86,15 @@ it rather than edit anything:
   └────────────────────────────────────────────┘
 ```
 
-The answer arrives in two places: in Claude Code, at whatever length the
-question deserves, and back in the dock as a couple of sentences beside the
-element you clicked. Questions and changes mix freely in one batch — half of
-"make this bigger" starts as "why is this the size it is".
-
-A question is deliberately kept out of the verification loop. Nothing about the
-element is supposed to move, so re-measuring it would report `unchanged`, and
-"unchanged" is precisely how the learned map decides it was wrong about an
-element. Answering a question must not cost you a map entry.
+The answer arrives in Claude Code at whatever length it deserves, and in the
+dock as a couple of sentences beside the element. Questions and changes mix
+freely in one batch. Questions skip the verification pass on purpose: nothing
+should move, and "unchanged" is how the learned map decides it was wrong.
 
 ### Watching it happen
 
-Everything between **Send** and the edit happens outside the browser, and until
-you look at the terminal none of it is visible: whether a session was found,
-whether it is working, whether anything ever read the queue. The dock now shows
-a line of it.
+Everything between Send and the edit happens outside the browser. The dock shows
+a line of it:
 
 ```
 ● Woke Claude Code via tmux
@@ -153,46 +103,23 @@ a line of it.
 ⚠ No Claude Code session open in this project — run /grab
 ```
 
-That last one is the reason this exists. A batch sent into a project with no
-session open used to look exactly like a batch being worked on.
+That last one is why this exists: a batch sent into a project with no session
+open used to look exactly like a batch being worked on.
 
-Hitting Send closes the dock, which is precisely when there is something to
-report, so the corner badge carries the line until the batch lands and for a
-few seconds after — long enough to read the one that says it worked.
+The server appends to `.ui-grab/activity.json`, a 60-entry ring buffer, and the
+dock reads it over `GET /__ui-grab/events` as an `EventSource`. A file rather
+than an emitter because the writers are separate processes — the dev server, the
+Stop hook inside Claude Code, and `/grab` itself. None can call each other; all
+can append a line. The extension polls the same log instead, since its page is
+on another origin.
 
-The server writes what it knows to `.ui-grab/activity.json` — a 60-entry ring
-buffer — and the dock reads it over `GET /__ui-grab/events` as an `EventSource`.
-A file rather than an emitter because the writers are separate processes: the
-dev server takes the batch, the Stop hook runs inside Claude Code, `/grab` is
-Claude editing the queue directly. None of them can call each other; all of them
-can append a line.
+## Zero-typing modes
 
-Two of the events are not written by anyone, but noticed: the queue going from
-full to empty is what "applied" means, since `/grab` is Claude editing a file and
-there is no command anywhere to instrument. Session status comes from the same
-undocumented registry `wake` reads, so if its shape changes the status line goes
-quiet rather than throwing.
-
-The stream is held open while the dock is open, while a question is unanswered,
-and for as long as a sent batch has not landed — not merely while an element is
-being re-measured, since `verify: false`, a host without verification, or a
-selector that no longer resolves all leave nothing to re-measure on exactly the
-batch you wanted the status for. The extension polls the same log every two
-seconds instead: its page is on someone else's origin, so an `EventSource` from
-there could never reach the bridge.
-
-## Zero-typing mode
-
-The queue is written asynchronously and MCP-style tools are pull-only, so
-something has to start a turn. `/grab` is one command per batch, which is
-usually fine. If you want none at all:
+`/grab` is one command per batch. If you want none:
 
 ```bash
 npx ui-grab-install --with-hook --mode both
 ```
-
-There are two ways to get a batch read without typing, and `--mode` picks which
-you use. They solve different halves of the same problem.
 
 | mode | what happens when you hit Send | good for |
 |------|-------------------------------|----------|
@@ -201,44 +128,21 @@ you use. They solve different halves of the same problem.
 | `wake` | an idle session gets poked the moment a batch arrives | long gaps between clicks |
 | `both` | wait first, wake if that window passes | **default** |
 
-Settings live in `.ui-grab/config.json`, and the extension popup flips between
-them without a restart.
+Settings live in `.ui-grab/config.json`; the extension popup flips between them
+without a restart.
 
-### wait: keep the turn alive
+**wait** — at the end of every turn the Stop hook checks the queue and keeps
+going if you queued something while Claude was working. It also lingers for
+`waitSeconds` (default 20) on an empty queue, so a click two seconds after
+Claude stops still catches the turn. It gives up after 20 consecutive blocks on
+an unchanged queue. The catch: a Stop hook can only hold open a turn that is
+still running.
 
-At the end of every turn the Stop hook checks the queue. If you queued something
-while Claude was working, it keeps going instead of stopping:
-
-```
-you type /grab once
-  -> drain, edit, try to finish
-  -> hook sees 3 new items you clicked in the meantime
-  -> blocked, keeps going
-  -> drain, edit, ...
-```
-
-It also lingers for `waitSeconds` (default 20) on an *empty* queue before
-letting the turn end, so a click two seconds after Claude stops still catches
-the same turn. To you it looks like Claude never stops while you are working. It
-gives up after 20 consecutive blocks on an *unchanged* queue, and a new batch
-resets that budget.
-
-The catch: a Stop hook can only hold open a turn that is still running. Once
-Claude Code is sitting at the prompt, there is no turn left to block.
-
-### wake: poke an idle session
-
-Something outside has to start that turn. Every running Claude Code writes
-`~/.claude/sessions/<pid>.json` describing itself, so the session belonging to
-this project can be found and reached two ways, in order:
-
-1. **tmux**, typing the prompt into the session's pane. You watch it happen in
-   the terminal you were already looking at. On by default.
-2. **`claude --resume --fork-session -p`**, which needs no tmux but runs
-   headless: edits land in your repo, in a forked session you are not watching.
-   Off by default, `--resume` turns it on.
-
-A session already mid-turn is left alone; its Stop hook will pick the batch up.
+**wake** — every running Claude Code writes `~/.claude/sessions/<pid>.json`, so
+an idle session in this project can be found and reached two ways, in order:
+**tmux**, typing into its pane so you watch it happen (on by default), then
+`claude --resume --fork-session -p`, which needs no tmux but runs headless
+(off by default, `--resume` turns it on). A session mid-turn is left alone.
 
 ```bash
 npx ui-grab-install --with-hook --mode wake --resume   # both wake paths
@@ -248,16 +152,12 @@ npx ui-grab-bridge --mode both                         # or change it later
 
 Session discovery reads files Claude Code writes for its own use, which are not
 a documented interface. If the format changes, waking degrades to "could not
-wake anything" and the queue still drains on your next `/grab`. In `wait`/`both`
-the session also stays busy for the length of the window after each turn, so
-drop `--wait` if you would rather have the prompt back sooner.
-
-Run `npx ui-grab-install` without `--with-hook` to get `/grab` alone, plus the
-hook snippet to paste yourself.
+wake anything" and the queue still drains on your next `/grab`. Run
+`npx ui-grab-install` without `--with-hook` for `/grab` alone.
 
 ## Other agents
 
-The queue is a JSON file, so nothing about it is specific to Claude Code:
+The queue is a JSON file, so nothing about it is Claude-specific:
 
 ```bash
 npx ui-grab-drain            # print the batch as text, for any agent
@@ -275,7 +175,7 @@ project file can drain a batch this way.
 ## Next.js
 
 Only the Vite plugin is Vite-specific. Everything else is a middleware and two
-script tags, so Next gets the same picker from a dev-only route:
+script tags:
 
 ```js
 // app/__ui-grab/[...path]/route.js
@@ -296,35 +196,11 @@ const g = uiGrabScripts();
 )}
 ```
 
-The handler returns 404 in a production build, so the route cannot ship.
+The handler 404s in a production build, so the route cannot ship.
 `vite-plugin-ui-grab/middleware` exports the same thing as a Connect middleware
 for any other Node dev server.
 
-## Where things live
-
-```
-your-project/
-  .claude/
-    commands/grab.md     # the /grab command
-    settings.json        # the Stop hook
-  .ui-grab/
-    config.json          # mode and wait window. commit this
-    map.json             # confirmed element -> source. worth committing too
-    queue.json           # pending picks. gitignored
-    sent.json            # what each pick pointed at, pending a verdict
-    batches.json         # restore points
-    activity.json        # what has happened since, for the dock's status line
-    answers.json         # replies to ask items, on their way back to the browser
-    shots/               # crops, with the shot toggle on
-```
-
-The queue sits outside `.claude/` on purpose. Claude Code treats that directory
-as sensitive and asks before writing to it, and the last step of every drain is
-clearing the queue. That would mean a permission prompt on every batch, and an
-outright failure in the headless session `wake` mode starts, where nobody is
-there to approve it.
-
-## What actually gets sent
+## What gets sent
 
 One real entry, verbatim from the test suite:
 
@@ -358,117 +234,59 @@ One real entry, verbatim from the test suite:
 
 Note what is **not** in there: source code. The payload is a pointer, not a
 snapshot. You might click at 2pm and drain at 4pm, after the file has been
-edited twice. A snapshot would be a lie by then; a file and line plus a class
-list and some text still finds the right place. Claude reads the file fresh.
+edited twice — a snapshot would be a lie by then. Claude reads the file fresh.
 
-Three fields earn their keep more than you would expect. The full `class`
-attribute, untruncated, because in a utility-CSS codebase the class list *is*
-the styling, so this plus a line number is often the whole answer. `styles` is
-the *computed* style, so it says what the element rendered as rather than what
-the source asked for. And `ancestors`, because half of "make this bigger" is a
-question about the parent's layout.
+Three fields earn their keep. The full, untruncated `class` attribute, because
+in a utility-CSS codebase the class list *is* the styling. `styles` is the
+*computed* style, so it says what rendered rather than what the source asked
+for. And `ancestors`, because half of "make this bigger" is about the parent.
 
-`sourceRefs` are keys into a `sources` map at the top of the queue file. That
-map belongs to the whole queue rather than to any item: four picks inside one
-component used to ship that component four times, and a block that already
-covers a line is now reused instead of copied. Blocks are attached only where
-the pointer is not already certain, since the instructions tell the agent to
-re-read the file before editing either way.
-
-`also` shows up when one comment covers several elements. Each is resolved, and
-the candidates say which element they belong to.
+`sourceRefs` key into a `sources` map shared by the whole batch, so four picks
+inside one component ship that component once. `also` shows up when one comment
+covers several elements.
 
 ## How the source lookup works
 
-Three sources, and the ordering between them is the interesting part.
+Three sources, ranked.
 
-### The map, when we already know
+**The map, when we already know.** A pick the browser confirms — the element
+really did move after the edit — goes into `.ui-grab/map.json` under its route
+and selector, and the next pick ships one exact pointer and skips the scan.
+Entries do not rot: every lookup re-checks the line, chases the anchor if it
+drifted, and deletes the entry if the element is gone or went unchanged after an
+edit. This is the only part that gets better with use.
 
-When the browser confirms a pick, meaning that element really did change after
-the agent edited a file, the mapping goes into `.ui-grab/map.json` under its
-route and selector. The next pick of that element ships one exact pointer and
-skips the project scan entirely.
+**react-grab, when you have it.** With [`react-grab`](https://react-grab.com)
+installed, the plugin reads the component and source line straight off the React
+fiber — and then checks it. On a real page it returned the right file and the
+wrong line. So every fiber reading is compared against the line it names; if
+that line does not mention the element's tag, a class, its id, or its text, the
+candidate drops below the grep hits and is labelled `react (line unverified)`.
+A confidently wrong line is worse than an honest guess. When it corroborates, it
+leads.
 
-Entries do not rot. Every lookup re-checks the line, chases the anchor if it has
-drifted, and deletes the entry if the element is gone. An element that goes
-unchanged after an edit deletes its own entry too, on the grounds that we were
-evidently wrong about it. This is the only part of the system that gets better
-with use, and the payload gets smaller as it does.
-
-### react-grab, when you have it
-
-If the project has [`react-grab`](https://react-grab.com) installed, the plugin
-loads its `primitives` in dev and asks it for the component and source line
-behind each pick, straight off the React fiber:
-
-```bash
-npm i -D react-grab
-```
-
-Nothing to configure. The plugin detects it and stays quiet if it is not there.
-Each item then carries a `react` block with the component name, file, line, and
-the enclosing component stack.
-
-**It is checked, not trusted.** On a real page this returned the right *file*
-and the wrong *line*: it named `Home.tsx:99` (`<h2>Experience</h2>`) for an
-`<h1 className="headline">` that lives at line 80, and most stack frames came
-back unsymbolicated. So every fiber reading is compared against the source line
-it names. If that line does not mention the element's tag, one of its classes,
-its id, or its text, the candidate drops below the grep hits and is labelled
-`react (line unverified)` rather than being dropped. A confidently wrong line is
-worse than an honest guess.
-
-When it does corroborate, it leads. It is the only signal here that is not
-guessing.
-
-### grep, always
-
-Grep is the whole story for non-React pages, production React, and any element
-react-grab cannot place. The plugin searches the project for the element's own
-distinguishing strings, ranked strongest first: exact text, then `id` and
-`data-testid`, then `aria-label` and the full class attribute, then single class
-names. Up to four hits come back. It works in React, Vue, Svelte, Astro and
-plain HTML alike, and worst case it finds nothing and Claude searches the way it
-would have anyway.
-
-Two tiebreakers matter more than they sound. A line that actually *opens* the
-element's tag beats one that merely contains the same string, otherwise
-`<title>Save changes</title>` outranks the real `<button>Save changes</button>`.
-And a file with one strong hit pulls its other hits up with it, because elements
-cluster in one file rather than scattering across a codebase.
-
-It handles dynamically rendered text. Picking a button that rendered
-`"Set ANTHROPIC_API_KEY to begin"` resolves to the ternary that produced it:
+**Grep, always.** The whole story for non-React pages, production React, and
+anything react-grab cannot place. It searches for the element's distinguishing
+strings, strongest first: exact text, then `id` and `data-testid`, then
+`aria-label` and the full class attribute, then single class names. Up to four
+hits. Two tiebreakers matter: a line that *opens* the element's tag beats one
+that merely contains the string, so `<title>Save changes</title>` cannot outrank
+the real button; and a file with one strong hit pulls its other hits up, because
+elements cluster. Dynamic text resolves to the expression that produced it:
 
 ```
 src/components/Lobby.tsx:139  [text]  {ready ? "Join the call" : "Set ANTHROPIC_API_KEY to begin"}
 src/components/Lobby.tsx:134  [class list]  className="primary"
 ```
 
-The file list is cached for 10 seconds, `node_modules`/`dist`/`.git` are
-skipped, and files over 400 KB are ignored.
-
 **These are candidates, not answers.** A hit points at where the element is
-*written*, which is frequently not where its styling *lives*: the hit is
-`<Button size="sm">Place order</Button>` and the padding is in `Button.tsx` or a
-token file. A head start, not a substitute for reading the code, and
-`.claude/commands/grab.md` says so.
+*written*, often not where its styling *lives* — the hit is
+`<Button size="sm">Place order</Button>` and the padding is in `Button.tsx`.
+`.claude/commands/grab.md` says so. A certain pointer travels alone, with no
+source block; anything less certain gets the full spread.
 
-### How much of it gets sent
-
-A pointer that is certain does not need three alternatives and a copy of the
-file attached to it. A corroborated fiber reading, a confirmed map entry, or a
-lone exact-text hit with no rival in another file is sent on its own, with no
-source block. Anything less certain gets the full spread, because the agent is
-going to have to choose.
-
-### When the lookup happens
-
-By default it runs when you hit Send, which is when the file list is already
-warm. Set `resolveAt: 'drain'` and the queue stores bare picks instead, and
-`ui-grab-drain` resolves them against the files as they are at the moment
-something reads them. That costs one scan later and is always current, which is
-worth it if batches tend to sit for a while before anyone drains them.
+By default the lookup runs at Send, when the file list is warm. Set
+`resolveAt: 'drain'` to store bare picks and resolve them at read time instead.
 
 ## Options
 
@@ -491,8 +309,7 @@ uiGrab({
 
 ## Programmatic API
 
-`window.__uiGrab` is exposed in dev, which is handy for scripting or your own
-tests:
+`window.__uiGrab` is exposed in dev, for scripting or your own tests:
 
 ```js
 const g = window.__uiGrab;
@@ -515,47 +332,55 @@ g.state();               // { picking, open, pending, count, extra, shots, ask,
                          //   batch, asked, inflight }
 ```
 
-## Why not a Chrome extension
+## Where things live
 
-That was the first design and it was worse. An extension cannot read framework
-internals from its own isolated world, so it needs a MAIN-world script plus a
-relay; it cannot `fetch` `http://localhost` from an `https` page, so it needs a
-service worker; it cannot talk stdio, so it needs a local HTTP server *and* an
-MCP server, which needs port-contention handling because Claude Code spawns one
-MCP process per session. About 700 lines across six files and two protocols.
+```
+your-project/
+  .claude/
+    commands/grab.md     # the /grab command
+    settings.json        # the Stop hook
+  .ui-grab/
+    config.json          # mode and wait window. commit this
+    map.json             # confirmed element -> source. worth committing too
+    queue.json           # pending picks. gitignored
+    sent.json            # what each pick pointed at, pending a verdict
+    batches.json         # restore points
+    activity.json        # what has happened since, for the dock's status line
+    answers.json         # replies to ask items, on their way back to the browser
+    shots/               # crops, with the shot toggle on
+```
 
-A dev plugin already runs in Node with same-origin access to the page, so all of
-that collapses into a file write. The extension is still the better call for
-sites you do not control, like a deployed staging URL. It ships in `extension/`
-and talks to `npx ui-grab-bridge`.
+The queue sits outside `.claude/` on purpose: Claude Code treats that directory
+as sensitive and asks before writing to it, and every drain ends by clearing the
+queue — a permission prompt per batch, and an outright failure in the headless
+session `wake` starts.
 
-## What the queue actually is
+## Security
 
-A list of instructions an agent will carry out, in `wake` mode into a headless
-session running with `acceptEdits`. So the endpoints that fill it, score it and
-revert it accept requests only from a page served locally.
+The queue is a list of instructions an agent will carry out, in `wake` mode into
+a headless session running with `acceptEdits`. So the endpoints that fill,
+score and revert it accept requests only from a page served locally.
 
-That check is load-bearing rather than decorative. A POST sent as
-`content-type: text/plain` is a CORS-*simple* request: the browser fires it with
-no preflight and blocks only the reply. Without the check, any page you happened
-to have open in another tab could quietly queue work into your dev server and
-have Claude Code carry it out. Browsers label what they send (`Origin`,
-`Sec-Fetch-Site`) and a page on someone else's domain cannot forge either. A
-request carrying neither came from a local process, which already has the
-machine.
+That check is load-bearing. A POST sent as `content-type: text/plain` is a
+CORS-*simple* request: the browser fires it with no preflight and blocks only
+the reply. Without the check, any page open in another tab could queue work into
+your dev server and have Claude Code carry it out. Browsers label what they send
+(`Origin`, `Sec-Fetch-Site`) and a page on someone else's domain cannot forge
+either; a request carrying neither came from a local process, which already has
+the machine.
 
 Beyond that: the plugin's endpoints exist only under `vite dev`, the Next
-handler 404s outside `next dev`, and the bridge binds `127.0.0.1`. None of them
-reach production.
+handler 404s outside `next dev`, and the bridge binds `127.0.0.1`.
 
 ## Tradeoffs
 
-- **Dev server only.** It is a dev plugin, so it cannot touch a deployed URL.
-  The extension can, if you need that.
+- **Dev server only.** It cannot touch a deployed URL. The extension in
+  `extension/` can — it talks to `npx ui-grab-bridge`. That was the first
+  design, and it needed a MAIN-world script, a relay, a service worker, a local
+  HTTP server and an MCP server to do what a dev plugin does with a file write.
 - **Screenshots cost a prompt.** In-page JS cannot capture its own tab, so the
-  toggle uses `getDisplayMedia`. The stream is opened once and reused for every
-  crop, but you still approve it once per session, which is why it is off by
-  default. The extension path uses `captureVisibleTab` and needs no prompt.
+  toggle uses `getDisplayMedia` — one approval per session, which is why it is
+  off by default. The extension path uses `captureVisibleTab` and needs none.
 - **Revert is git-shaped.** No repo, no restore points. Untracked files created
   after a batch are not put back.
 
@@ -599,10 +424,12 @@ npm install
 npm test
 ```
 
-Boots a real Vite dev server, drives the picker in real headless Chrome, opens a
-real tmux pane to wake a session in, makes a real git repo to revert inside, and
-asserts on what lands on disk. 221 checks, covering the middleware and the
-origin gate, source resolution and ranking, the shared source store, the learned
-map, verification, revert, both zero-typing modes, the Stop hook's block budget,
-the status log and the hub that fans it out, ask items and their answers, and
-the Next.js adapter.
+221 checks against a real Vite dev server, real headless Chrome, a real tmux
+pane and a real git repo: the middleware and origin gate, source resolution and
+ranking, the shared source store, the learned map, verification, revert, both
+zero-typing modes, the Stop hook's block budget, the status log, ask items and
+their answers, and the Next.js adapter.
+
+---
+
+MIT. Built for [Claude Code](https://claude.com/claude-code).

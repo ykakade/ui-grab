@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="A Vite dev plugin: click elements in your running app, say what should change, and send the batch to Claude Code with the source line already attached.">
+<meta name="description" content="Point at what's wrong. ui-grab is a dev-server plugin: click elements in your running app, say what should change, and Claude Code gets the batch with the file and line attached.">
 <title>ui-grab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -118,18 +118,19 @@
   .bar nav a:hover { color: var(--ink); background: var(--sunk); }
 
   /* ------------------------------------------------------------------ hero */
-  .hero { padding: 68px 0 28px; }
+  .hero { padding: 76px 0 20px; }
   h1 {
     margin: 0; font: 700 clamp(38px, 6.2vw, 62px)/1.02 var(--display);
     letter-spacing: -.035em; text-wrap: balance; max-width: 15ch;
   }
   h1 em { font-style: normal; color: var(--accent); }
   .lede {
-    margin: 20px 0 0; max-width: 60ch; font-size: 17.5px; color: var(--muted);
+    margin: 18px 0 0; max-width: 54ch; font-size: 18px; color: var(--muted);
     text-wrap: pretty;
   }
   .lede strong { color: var(--ink); font-weight: 600; }
-  .cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 28px; }
+  .sub { margin: 8px 0 0; font-size: 14.5px; color: var(--muted); opacity: .85; }
+  .cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 26px; }
   .btn {
     display: inline-flex; align-items: center; gap: 8px; text-decoration: none;
     font: 600 14px/1 var(--body); padding: 11px 16px; border-radius: 9px;
@@ -153,8 +154,24 @@
   }
   .install button:hover { color: var(--accent); }
 
+  /* Three steps, the whole product. Numbered off the counter so the markup
+     stays an <ol> and the digits keep the mono face the picker's labels use. */
+  .how {
+    list-style: none; counter-reset: step; margin: 40px 0 0; padding: 22px 0 0;
+    border-top: 1px solid var(--rule-soft);
+    display: grid; gap: 18px; grid-template-columns: 1fr;
+  }
+  @media (min-width: 760px) { .how { grid-template-columns: repeat(3, 1fr); gap: 26px; } }
+  .how li { counter-increment: step; display: grid; gap: 3px; }
+  .how li::before {
+    content: counter(step); font: 600 11px/1.5 var(--mono); color: var(--accent);
+    letter-spacing: .06em;
+  }
+  .how b { font: 600 15px/1.35 var(--display); letter-spacing: -.012em; font-weight: 600; }
+  .how span { font-size: 14px; color: var(--muted); line-height: 1.6; }
+
   /* ------------------------------------------------------------------ demo */
-  section { padding: 44px 0; }
+  section { padding: 52px 0; }
   .shead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
   h2 {
     margin: 0; font: 600 26px/1.2 var(--display); letter-spacing: -.022em;
@@ -318,37 +335,38 @@
   <div class="wrap hero">
     <h1>Point at it. Say <em>what's wrong</em>.</h1>
     <p class="lede">
-      A Vite dev plugin. Click elements in your running app, type what should change —
-      or ask what's going on — batch them up, hit Send, and Claude Code picks the batch
-      up with <strong>the file and line each one probably lives on already attached</strong>.
-      It reports back as it goes. No extension, no daemon, no MCP server.
+      Click elements in your running app, say what should change, hit Send. Claude Code
+      gets the batch with <strong>the file and line already attached</strong>.
     </p>
+    <p class="sub">A dev-server plugin. No extension, no daemon, no MCP server.</p>
     <div class="cta">
-      <a class="btn primary" href="https://github.com/ykakade/ui-grab">
+      <a class="btn primary" href="#demo">Try it below</a>
+      <a class="btn" href="https://github.com/ykakade/ui-grab">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
-        View on GitHub
+        GitHub
       </a>
       <span class="install"><b>npm i -D vite-plugin-ui-grab</b><button id="copy-install">copy</button></span>
     </div>
+
+    <ol class="how">
+      <li><b>Alt+Shift+G</b><span>Click any element in your app.</span></li>
+      <li><b>Type the change</b><span>Enter adds it. Keep going, across routes.</span></li>
+      <li><b>Send</b><span>Then <span class="inline-code">/grab</span> — or nothing at all.</span></li>
+    </ol>
   </div>
 
   <div class="wrap">
     <section id="demo">
       <div class="shead"><span class="chip">demo</span><h2>The real picker, running right here</h2></div>
       <p class="snote">
-        The frame below is a throwaway checkout page with <code>extension/picker.js</code> —
-        the same file the plugin serves — injected into it. Hover to highlight, click to select,
-        type a change and press <span class="inline-code">Enter</span>. Add two or three, then hit
-        <strong>Send</strong>. Instead of writing to a queue file, this page shows you the payload
-        that would have landed in it.
+        A throwaway checkout page with <code>extension/picker.js</code> — the same file the plugin
+        serves — injected into it. Pick a few elements, hit <strong>Send</strong>, and the payload
+        that would have landed in your queue file shows up on the right.
       </p>
       <p class="snote">
-        Try the <span class="inline-code">ask</span> toggle in the dock's header too: it turns the
-        comment box into a question box, and the item goes out marked
-        <span class="inline-code">"kind": "ask"</span> for the agent to answer rather than edit.
-        After you hit Send, watch the dock — the status line and the answer that lands under your
-        question are the real thing, replaying the sequence a dev server would produce. This page
-        has no agent behind it, so the answer itself is canned.
+        The <span class="inline-code">ask</span> toggle sends a question instead of a change. The
+        status line and the answer that follow are real; only the answer's text is canned, because
+        there is no agent behind this page.
       </p>
 
       <div class="split">
@@ -363,8 +381,8 @@
           <div class="steps">
             <span><kbd>hover</kbd> highlight</span>
             <span><kbd>click</kbd> select</span>
-            <span><kbd>Enter</kbd> add to batch</span>
-            <span><kbd>ask</kbd> question, not change</span>
+            <span><kbd>Enter</kbd> queue it</span>
+            <span><kbd>Alt</kbd>+<kbd>↑</kbd> parent</span>
             <span><kbd>Esc</kbd> back out</span>
           </div>
         </div>
@@ -378,10 +396,8 @@
           <div id="payload-wrap">
             <div class="empty">
               <span class="chip">waiting</span>
-              <p style="margin:0">
-                Pick an element in the frame, say what should change, and hit <b>Send</b>.
-                What Claude Code would read shows up here.
-              </p>
+              <p style="margin:0">Pick something, say what should change, hit <b>Send</b>.
+                What Claude Code would read shows up here.</p>
             </div>
           </div>
         </div>
@@ -392,12 +408,10 @@
         <div class="srcbody" id="srcview"></div>
       </details>
       <p class="snote" style="margin-top:14px">
-        The <code>candidates</code> above come from the plugin's own ranking — exact text first,
-        then <code>id</code> and <code>data-testid</code>, then <code>aria-label</code> and the
-        whole class attribute, then single class names — with a line that actually
-        <em>opens</em> the element's tag beating one that merely contains the same string.
-        Here it runs in your browser over this page's two files; in your project it runs in Node
-        over the whole tree, and adds the enclosing declaration for the best hits.
+        The <code>candidates</code> come from the plugin's own ranking: exact text, then
+        <code>id</code>, then <code>aria-label</code> and the class attribute — and a line that
+        <em>opens</em> the element's tag beats one that merely mentions it. Here it runs over this
+        page's two files; in your project, over the whole tree.
       </p>
     </section>
 
@@ -406,8 +420,8 @@
     <section id="next">
       <div class="shead"><span class="chip">then what</span><h2>Over in Claude Code</h2></div>
       <p class="snote">
-        The batch lands in <code>.ui-grab/queue.json</code>. One command drains it — or none at all,
-        if you turn on a zero-typing mode.
+        The batch lands in <code>.ui-grab/queue.json</code>. One command drains it — or none,
+        in a zero-typing mode.
       </p>
       <pre class="term">
 <span class="c">$</span> npm run dev
@@ -422,11 +436,9 @@
   <span class="g">✓</span> Applied 2 changes, answered 1, queue cleared</pre>
 
       <p class="snote">
-        Meanwhile the dock says what is happening to it —
-        <em>woke Claude Code via tmux</em>, <em>working…</em>, <em>applied 3 items</em>, or
-        <em>no session open in this project</em>, which is the one that used to look exactly
-        like everything working. The answer to a question arrives in both places: in the
-        terminal at whatever length it deserves, and back under the element you asked about.
+        The dock says what is happening the whole time — <em>woke Claude Code via tmux</em>,
+        <em>working…</em>, <em>applied 3 items</em>, or <em>no session open in this project</em>,
+        which used to look exactly like everything working.
       </p>
 
       <table class="modes">
@@ -442,30 +454,33 @@
       <div class="cards">
         <div class="card">
           <span class="chip">pointers</span>
-          <h3>It sends a pointer, not a snapshot</h3>
-          <p>You might click at 2pm and drain at 4pm, after the file has been edited twice. A snapshot would be a lie by then; a file, a line, a class list and some text still finds the right place.</p>
+          <h3>A pointer, not a snapshot</h3>
+          <p>You might click at 2pm and drain at 4pm. A snapshot would be a lie by then; a file, a line, a class list and some text still find the right place.</p>
         </div>
         <div class="card">
           <span class="chip">ranking</span>
           <h3>Checked, not trusted</h3>
-          <p>With <span class="inline-code">react-grab</span> installed it reads the component and line straight off the fiber — then verifies that line against the source.</p>
-          <p>A reading that doesn't corroborate drops below the grep hits and says <em>line unverified</em>. A confidently wrong line is worse than an honest guess.</p>
+          <p>With <span class="inline-code">react-grab</span> installed it reads the component and line off the fiber, then checks that line against the source. A reading that doesn't corroborate drops below the grep hits and says <em>line unverified</em>.</p>
         </div>
         <div class="card">
-          <span class="chip">local only</span>
-          <h3>The queue is instructions</h3>
-          <p>Whatever lands in it is what an agent goes on to do, so the endpoint takes writes only from a page served locally — a cross-site POST is refused outright.</p>
+          <span class="chip">feedback</span>
+          <h3>It learns which picks were right</h3>
+          <p>Elements are re-measured after the edit. One that never moved deletes its own map entry; one that did ships a single exact pointer next time.</p>
         </div>
         <div class="card">
           <span class="chip">questions</span>
           <h3>Not every pick is an edit</h3>
-          <p>Half of <em>make this bigger</em> starts as <em>why is this the size it is</em>. An item marked <span class="inline-code">ask</span> gets answered, not applied, and questions and changes mix freely in one batch.</p>
-          <p>A question is kept out of the verification pass on purpose: nothing about the element should move, and <em>unchanged</em> is exactly how the learned map decides it was wrong about one.</p>
+          <p>Half of <em>make this bigger</em> starts as <em>why is this the size it is</em>. An item marked <span class="inline-code">ask</span> gets answered, not applied — in the terminal, and back under the element you clicked.</p>
         </div>
         <div class="card">
-          <span class="chip">status</span>
-          <h3>A file, not a socket</h3>
-          <p>The writers are separate processes — the dev server takes the batch, the Stop hook runs inside Claude Code, <span class="inline-code">/grab</span> is Claude editing the queue directly. None of them can call each other, so each appends to a small ring buffer the dock reads over an <span class="inline-code">EventSource</span>.</p>
+          <span class="chip">local only</span>
+          <h3>The queue is instructions</h3>
+          <p>Whatever lands in it is what an agent goes on to do, so the endpoint takes writes only from a page served locally. A cross-site POST is refused outright.</p>
+        </div>
+        <div class="card">
+          <span class="chip">revert</span>
+          <h3>One click back</h3>
+          <p>Every batch takes a restore point from <span class="inline-code">git stash create</span> when it is queued — free, invisible, and there when an edit lands somewhere you didn't mean.</p>
         </div>
       </div>
     </section>
@@ -473,7 +488,7 @@
 
   <div class="wrap">
     <footer>
-      <span>MIT · built for <a href="https://claude.com/claude-code">Claude Code</a></span>
+      <span>MIT · for <a href="https://claude.com/claude-code">Claude Code</a></span>
       <span class="grow"></span>
       <a href="https://github.com/ykakade/ui-grab">GitHub</a>
       <a href="https://www.npmjs.com/package/vite-plugin-ui-grab">npm</a>
