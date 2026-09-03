@@ -131,16 +131,19 @@
   }
   #theme:hover { color: var(--ink); border-color: var(--meta); }
   #theme svg { display: block; }
-  /* One button, two glyphs: whichever mode you are *not* in is the one shown. */
-  #theme .moon { display: none; }
+  /* One button, two glyphs. The glyph is the *destination*, not the current
+     state: in light mode you get the moon, which is what the click gives you
+     and what the button's label already says. Showing the mode you are in
+     would put a sun above the words "switch to dark mode". */
+  #theme .sun { display: none; }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) #theme .sun { display: none; }
-    :root:not([data-theme="light"]) #theme .moon { display: block; }
+    :root:not([data-theme="light"]) #theme .sun { display: block; }
+    :root:not([data-theme="light"]) #theme .moon { display: none; }
   }
-  :root[data-theme="dark"] #theme .sun { display: none; }
-  :root[data-theme="dark"] #theme .moon { display: block; }
-  :root[data-theme="light"] #theme .sun { display: block; }
-  :root[data-theme="light"] #theme .moon { display: none; }
+  :root[data-theme="dark"] #theme .sun { display: block; }
+  :root[data-theme="dark"] #theme .moon { display: none; }
+  :root[data-theme="light"] #theme .sun { display: none; }
+  :root[data-theme="light"] #theme .moon { display: block; }
 
   /* ------------------------------------------------------------------ hero */
   .hero { padding: 96px 0 0; }
