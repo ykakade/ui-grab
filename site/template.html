@@ -327,6 +327,155 @@
   footer .grow { flex: 1; }
   footer a { color: var(--faint); text-decoration: none; }
   footer a:hover { color: var(--ink); }
+
+  /* ----------------------------------------------------------- refreshed UI
+     The site is deliberately closer to a tool than a marketing page: one
+     promise, one command, then the working product. The red signal is only
+     used for the thing that needs attention (the element being pointed at). */
+  :root {
+    --canvas: #f4f3ef;
+    --surface: #fbfaf7;
+    --code: #e9e8e1;
+    --line: #d9d8d0;
+    --hairline: #e5e4de;
+    --ink: #171716;
+    --title: #171716;
+    --prose: #52524d;
+    --meta: #787871;
+    --faint: #a2a19a;
+    --brand: #e84936;
+    --brand-ink: #fffdf9;
+    --pos: #41765d;
+  }
+  :root[data-theme="dark"] {
+    --canvas: #11110f;
+    --surface: #191917;
+    --code: #23231f;
+    --line: #33332e;
+    --hairline: #292925;
+    --ink: #f2f1eb;
+    --title: #f7f6f1;
+    --prose: #b9b8af;
+    --meta: #8d8c83;
+    --faint: #68675f;
+    --brand: #ff6754;
+    --brand-ink: #24110d;
+    --pos: #87bd9e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --canvas: #11110f;
+      --surface: #191917;
+      --code: #23231f;
+      --line: #33332e;
+      --hairline: #292925;
+      --ink: #f2f1eb;
+      --title: #f7f6f1;
+      --prose: #b9b8af;
+      --meta: #8d8c83;
+      --faint: #68675f;
+      --brand: #ff6754;
+      --brand-ink: #24110d;
+      --pos: #87bd9e;
+    }
+  }
+  body { background: var(--canvas); font-size: 15px; }
+  .wrap { width: min(1120px, calc(100% - 48px)); }
+  header { background: color-mix(in srgb, var(--canvas) 91%, transparent); }
+  .bar { height: 64px; }
+  .mark { font-size: 15px; gap: 8px; }
+  .mark svg { color: var(--brand); }
+  .bar nav { gap: 7px; }
+  .bar nav a { font-size: 12px; letter-spacing: .01em; padding: 8px 7px; }
+  #theme { width: 31px; height: 31px; border-radius: 50%; margin-left: 3px; }
+
+  .hero { padding: clamp(70px, 11vw, 138px) 0 0; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(260px, .8fr); gap: 48px; align-items: end; }
+  .hero-copy { max-width: 710px; }
+  .eyebrow { margin: 0 0 18px; color: var(--meta); font: 500 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .eyebrow i { color: var(--brand); font-style: normal; margin-right: 7px; }
+  h1 { max-width: 10.8ch; font-size: clamp(43px, 6vw, 72px); line-height: .96; letter-spacing: -.062em; }
+  h1 em { display: inline-block; color: var(--brand); }
+  .lede { margin-top: 22px; max-width: 48ch; font-size: 17px; line-height: 1.55; }
+  .sub { font-size: 13px; margin-top: 9px; }
+  .cta { margin-top: 29px; gap: 10px; }
+  .btn { min-height: 40px; padding: 11px 14px; border-radius: 5px; font-size: 13px; }
+  .btn.primary { box-shadow: 3px 3px 0 color-mix(in srgb, var(--brand) 30%, transparent); }
+  .install { min-height: 40px; padding: 10px 12px; border-radius: 5px; }
+  .install::before { content: '$'; color: var(--brand); }
+  .install b { font-size: 12px; }
+  .install button { margin-left: 3px; }
+  .hero-brief { align-self: stretch; display: flex; flex-direction: column; justify-content: flex-end; padding: 24px; border: 1px solid var(--line); border-radius: 9px 9px 0 0; background: var(--surface); position: relative; overflow: hidden; }
+  .hero-brief::before { content: ''; width: 10px; height: 10px; position: absolute; top: 13px; right: 14px; background: var(--brand); border-radius: 50%; }
+  .brief-label { margin: 0 0 20px; font: 500 10px/1 var(--mono); letter-spacing: .07em; color: var(--faint); text-transform: uppercase; }
+  .brief-item { padding: 11px 0; border-top: 1px solid var(--hairline); display: grid; grid-template-columns: 28px 1fr; gap: 10px; }
+  .brief-item b { color: var(--ink); font-size: 13px; font-weight: 500; }
+  .brief-item span { color: var(--meta); font-size: 12.5px; line-height: 1.45; }
+  .brief-number { color: var(--brand); font: 12px/1.5 var(--mono); }
+
+  .how { grid-column: 1 / -1; margin: 20px 0 0; padding: 18px 0; border-block: 1px solid var(--line); grid-template-columns: repeat(3, 1fr); gap: 0; }
+  .how li { min-height: 48px; padding: 0 22px; border-left: 1px solid var(--line); gap: 1px; }
+  .how li:first-child { padding-left: 0; border-left: 0; }
+  .how li::before { display: none; }
+  .how b { font-size: 13px; }
+  .how span { font-size: 12px; line-height: 1.45; }
+
+  section { padding-top: 94px; }
+  .shead { gap: 13px; align-items: center; }
+  .chip { color: var(--brand); font-size: 10px; letter-spacing: .08em; }
+  h2 { font-size: clamp(25px, 3vw, 34px); letter-spacing: -.04em; }
+  .snote { max-width: 63ch; margin: 13px 0 25px; font-size: 14px; line-height: 1.65; }
+  .demo-kicker { color: var(--ink); }
+  .split { gap: 12px; }
+  .panel { border-radius: 9px; box-shadow: none; }
+  .phead { min-height: 42px; padding: 10px 13px; background: color-mix(in srgb, var(--surface) 88%, var(--canvas)); }
+  .dots i:nth-child(1) { background: var(--brand); }
+  .dots i:nth-child(2) { background: #efb849; }
+  .dots i:nth-child(3) { background: #659b78; }
+  #stage { height: 540px; }
+  .steps { padding: 11px 13px; font-size: 11.5px; }
+  .steps kbd { font-size: 10px; }
+  .out { background: #171716; border-color: #171716; }
+  .out .phead { color: #8e8d85; background: #21211e; border-color: #31312c; }
+  .out .phead button { color: #aaa89e; border-color: #3b3a35; }
+  #payload { color: #c2c0b7; padding: 15px; }
+  #payload .k { color: #f5f3ea; }
+  #payload .s { color: #b8c8bb; }
+  #payload .n { color: #ff8b7d; }
+  #payload .p { color: #77766e; }
+  .empty { color: #a5a39a; }
+  .empty b { color: #fffdf7; }
+  .empty .chip { color: #ff8b7d; }
+  details.src { margin-top: 10px; }
+  details.src > summary { padding: 13px 0; }
+  .srcbody { border-radius: 6px; }
+
+  #next { display: grid; grid-template-columns: minmax(0, .92fr) minmax(320px, 1.08fr); column-gap: 74px; align-items: start; }
+  #next > .shead, #next > .snote { grid-column: 1; }
+  #next > .term { grid-column: 2; grid-row: 1 / span 3; margin-top: 2px; }
+  #next > .notes, #next > table { grid-column: 1 / -1; }
+  pre.term { background: #171716; color: #c6c4ba; border-color: #171716; border-radius: 8px; padding: 21px; }
+  .notes { margin-top: 48px; grid-template-columns: repeat(3, 1fr); column-gap: 30px; }
+  .note { padding: 21px 0; }
+  .note h3 { font-size: 14px; }
+  .note p { font-size: 12.5px; }
+  table.modes { grid-column: 1 / -1; margin-top: 45px; }
+  footer { margin-top: 88px; padding-bottom: 34px; }
+
+  @media (max-width: 760px) {
+    .wrap { width: min(100% - 32px, 560px); }
+    .hero { display: block; padding-top: 78px; }
+    .hero-brief { margin-top: 42px; min-height: 190px; }
+    .how { grid-template-columns: 1fr; gap: 12px; margin-top: 0; border-top: 0; }
+    .how li, .how li:first-child { padding: 0; border: 0; }
+    #next { display: block; }
+    #next > .term { margin-top: 28px; }
+    .notes { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 460px) {
+    .bar nav a.hide-sm { display: none; }
+    .install { width: 100%; justify-content: space-between; }
+    .cta { align-items: stretch; }
+  }
 </style>
 
 <header>
@@ -357,33 +506,40 @@
 
 <main id="top">
   <div class="wrap hero">
-    <h1>Point at it. Say <em>what's wrong</em>.</h1>
-    <p class="lede">
-      Click elements in your running app, say what should change, hit Send. Claude Code
-      gets the batch with <strong>the file and line already attached</strong>.
-    </p>
-    <p class="sub">A dev-server plugin. No extension, no daemon, no MCP server.</p>
-    <div class="cta">
-      <a class="btn primary" href="#demo">Try it below</a>
-      <span class="install"><b>npm i -D vite-plugin-ui-grab</b><button id="copy-install">copy</button></span>
+    <div class="hero-copy">
+      <p class="eyebrow"><i>●</i> Local feedback for local builds</p>
+      <h1>Make the UI <em>say what you mean.</em></h1>
+      <p class="lede">
+        Point to a real element, describe the change in plain language, and send your agent
+        a useful trail back to the source — file, line, context included.
+      </p>
+      <p class="sub">A dev-server plugin for Vite. It never ships to production.</p>
+      <div class="cta">
+        <a class="btn primary" href="#demo">Use the live demo <span aria-hidden="true">↓</span></a>
+        <span class="install"><b>npm i -D vite-plugin-ui-grab</b><button id="copy-install">copy</button></span>
+      </div>
     </div>
+    <aside class="hero-brief" aria-label="How ui-grab works">
+      <p class="brief-label">One concise handoff</p>
+      <div class="brief-item"><span class="brief-number">01</span><span><b>Point</b><br>Choose the thing you can see.</span></div>
+      <div class="brief-item"><span class="brief-number">02</span><span><b>Describe</b><br>Leave a note in your own words.</span></div>
+      <div class="brief-item"><span class="brief-number">03</span><span><b>Send</b><br>Give your coding agent the evidence.</span></div>
+    </aside>
 
     <ol class="how">
-      <li><b>Alt+Shift+G</b><span>Click any element in your app.</span></li>
-      <li><b>Type the change</b><span>Enter adds it. Keep going, across routes.</span></li>
-      <li><b>Send</b><span>Then <span class="inline-code">/grab</span> — or nothing at all.</span></li>
+      <li><b>Open with Alt+Shift+G</b><span>No extra app or browser extension.</span></li>
+      <li><b>Keep a short queue</b><span>Collect notes as you move through routes.</span></li>
+      <li><b>Stay in control</b><span>Review, send, then run <span class="inline-code">/grab</span>.</span></li>
     </ol>
   </div>
 
   <div class="wrap">
     <section id="demo">
-      <div class="shead"><span class="chip">demo</span><h2>The real picker, running right here</h2></div>
+      <div class="shead"><span class="chip">live playground</span><h2>See the handoff take shape.</h2></div>
       <p class="snote">
-        A throwaway checkout page with <code>extension/picker.js</code> — the same file the plugin
-        serves — injected into it. Pick a few elements, hit <strong>Send</strong>, and the payload
-        that would have landed in your queue file shows up on the right. The
-        <span class="inline-code">ask</span> toggle sends a question instead of a change; only the
-        answer's text is canned, because there is no agent behind this page.
+        This is the actual picker running on a small storefront. Choose an element, add a note,
+        then send it. The dark panel on the right is the exact kind of context your agent receives.
+        Try <span class="inline-code">ask</span> when you want an answer instead of a change.
       </p>
 
       <div class="split">
@@ -421,7 +577,7 @@
       </div>
 
       <details class="src">
-        <summary>The page's source, so you can check the line numbers</summary>
+        <summary>Inspect the demo source and matched lines</summary>
         <div class="srcbody" id="srcview"></div>
       </details>
       <p class="snote" style="margin-top:10px">
@@ -433,10 +589,10 @@
     </section>
 
     <section id="next">
-      <div class="shead"><span class="chip">then what</span><h2>Over in Claude Code</h2></div>
+      <div class="shead"><span class="chip">the next move</span><h2>A clean handoff to Claude Code.</h2></div>
       <p class="snote">
-        The batch lands in <code>.ui-grab/queue.json</code>. One command drains it — or none,
-        in a zero-typing mode.
+        The batch lands in <code>.ui-grab/queue.json</code>. Drain it with one command, or let
+        a zero-typing mode keep the conversation moving.
       </p>
       <pre class="term">
 <span class="c">$</span> npm run dev
@@ -446,7 +602,7 @@
 <span class="c">&gt;</span> <span class="u">/grab</span>
   <span class="c">⏵</span> Read .ui-grab/queue.json
   <span class="c">⏵</span> Update index.html          <span class="c">button#place-order — 1.25×, proportions kept</span>
-  <span class="c">⏵</span> Update src/style.css       <span class="c">.checkout-title line-height 1.35 → 1.15</span>
+  <span class="c">⏵</span> Update src/style.css       <span class="c">.product-title line-height 1.35 → 1.15</span>
   <span class="c">⏵</span> Bash ui-grab-drain --answer <span class="c">g4k2f — "why is this not centred?"</span>
   <span class="g">✓</span> Applied 2 changes, answered 1, queue cleared</pre>
 
@@ -515,98 +671,47 @@
 <!-- The demo app's two files. Both the frame and the resolver below read from
      these exact strings, so the line numbers in the payload are real. -->
 <script type="text/plain" id="demo-html">
-<main class="checkout">
-  <header class="checkout-head">
-    <h1 class="checkout-title">Review your order</h1>
-    <p class="checkout-sub">Two items · ships Tuesday</p>
-  </header>
-
-  <ul class="line-items">
-    <li class="line-item">
-      <span class="li-name">Anodized desk lamp</span>
-      <span class="li-price">$148.00</span>
-    </li>
-    <li class="line-item">
-      <span class="li-name">Linen shade, walnut</span>
-      <span class="li-price">$62.00</span>
-    </li>
-  </ul>
-
-  <div class="totals">
-    <div class="total-row"><span>Subtotal</span><span>$210.00</span></div>
-    <div class="total-row"><span>Shipping</span><span>$12.00</span></div>
-    <div class="total-row total-row--grand"><span>Total</span><span>$222.00</span></div>
-  </div>
-
-  <div class="actions">
-    <button id="place-order" class="btn btn-primary">Place order</button>
-    <button class="btn btn-ghost" aria-label="Return to cart">Back to cart</button>
-  </div>
+<main class="storefront">
+  <nav class="store-nav">
+    <a class="wordmark" href="#">Morrow <i>Objects</i></a>
+    <span class="store-nav__right">Cart <b>02</b></span>
+  </nav>
+  <section class="product">
+    <div class="product-art" aria-label="Cedar stool product image"><span></span></div>
+    <div class="product-copy">
+      <p class="product-kicker">Edition 04 / Made to order</p>
+      <h1 class="product-title">Cedar<br>side stool</h1>
+      <p class="product-desc">Hand-turned western red cedar with a soft, natural wax finish.</p>
+      <div class="product-meta"><span>Ø 34 cm</span><span>Ships in 3 weeks</span></div>
+      <div class="buy-row">
+        <span class="product-price">$320</span>
+        <button id="place-order" class="btn btn-primary">Add to cart <span>↗</span></button>
+      </div>
+      <button class="btn btn-ghost" aria-label="Save Cedar side stool">Save for later</button>
+    </div>
+  </section>
 </main>
 </script>
 
 <script type="text/plain" id="demo-css">
-:root {
-  --paper: #ffffff;
-  --ink: #14161c;
-  --muted: #6b7386;
-  --rule: #e6e8ef;
-  --brand: #4f6bff;
-  --radius: 10px;
-}
-body {
-  margin: 0;
-  padding: 34px 22px;
-  background: #f2f4f9;
-  color: var(--ink);
-  font: 400 14px/1.55 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
-}
-.checkout {
-  max-width: 380px;
-  margin: 0 auto;
-  padding: 24px;
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: 14px;
-  box-shadow: 0 12px 34px -18px rgba(20, 22, 28, .35);
-}
-.checkout-title {
-  margin: 0;
-  font-size: 21px;
-  font-weight: 600;
-  letter-spacing: -.02em;
-  line-height: 1.35;
-}
-.checkout-sub { margin: 4px 0 20px; color: var(--muted); font-size: 13px; }
-.line-items { list-style: none; margin: 0 0 18px; padding: 0; }
-.line-item {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--rule);
-}
-.li-price { font-variant-numeric: tabular-nums; color: var(--muted); }
-.totals { margin-bottom: 20px; }
-.total-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 5px 0;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.total-row--grand { color: var(--ink); font-weight: 600; font-size: 15px; }
-.actions { display: flex; flex-direction: column; gap: 8px; }
-.btn {
-  font: inherit;
-  font-weight: 600;
-  padding: 10px 16px;
-  border-radius: var(--radius);
-  border: 1px solid transparent;
-  cursor: pointer;
-}
-.btn-primary { background: var(--brand); color: #fff; }
-.btn-ghost { background: transparent; color: var(--muted); border-color: var(--rule); }
+:root { --paper: #f5f0e7; --ink: #20211e; --muted: #706e66; --rule: #dcd5ca; --brand: #e84936; --radius: 4px; }
+body { margin: 0; padding: 0; background: #e6ded0; color: var(--ink); font: 400 14px/1.55 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif; }
+.storefront { min-height: 100vh; padding: 18px; background: var(--paper); }
+.store-nav { display: flex; align-items: center; justify-content: space-between; padding: 3px 0 28px; border-bottom: 1px solid var(--rule); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+.wordmark { color: var(--ink); text-decoration: none; font-weight: 600; }
+.wordmark i { font-family: Georgia, serif; font-weight: 400; font-size: 13px; text-transform: none; letter-spacing: 0; }
+.store-nav__right { color: var(--muted); }.store-nav__right b { color: var(--brand); margin-left: 4px; }
+.product { max-width: 700px; margin: 0 auto; padding: 42px 0 36px; display: grid; grid-template-columns: 1fr 1fr; gap: 31px; align-items: center; }
+.product-art { min-height: 334px; position: relative; overflow: hidden; background: linear-gradient(145deg, #d5c3a9 0 38%, #bca689 38% 100%); }
+.product-art::after { content: ''; position: absolute; width: 136px; height: 136px; border: 27px solid #77553d; border-radius: 50%; top: 80px; left: 50%; transform: translateX(-50%); box-shadow: 0 84px 0 -24px #644633, 0 130px 0 -26px #5a3e2d; }
+.product-art span { position: absolute; z-index: 1; left: 14px; bottom: 12px; color: #fff8ed; font: 11px/1.3 ui-monospace, monospace; }.product-art span::after { content: 'WESTERN RED CEDAR'; }
+.product-copy { padding-right: 5px; }.product-kicker { margin: 0 0 14px; color: var(--muted); font: 10px/1.3 ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; }
+.product-title { margin: 0; font: 400 clamp(33px, 4.3vw, 51px)/.9 Georgia, serif; letter-spacing: -.06em; }.product-desc { max-width: 29ch; margin: 19px 0; color: var(--muted); font-size: 13px; }
+.product-meta { display: flex; gap: 12px; padding: 12px 0; border-block: 1px solid var(--rule); color: var(--muted); font-size: 11px; }.product-meta span + span::before { content: '·'; margin-right: 12px; }
+.buy-row { display: flex; align-items: center; justify-content: space-between; margin-top: 22px; gap: 12px; }.product-price { font: 400 23px/1 Georgia, serif; }
+.btn { font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .01em; padding: 11px 14px; border-radius: var(--radius); border: 1px solid transparent; cursor: pointer; }
+.btn-primary { background: var(--brand); color: #fffdf8; min-width: 144px; }.btn-primary span { margin-left: 8px; }.btn-ghost { display: block; margin-top: 9px; width: 100%; background: transparent; color: var(--muted); border-color: var(--rule); }
+@media (max-width: 520px) { .product { grid-template-columns: 1fr; padding-top: 24px; } .product-art { min-height: 220px; } }
 </script>
 
 <!-- extension/picker.js, verbatim. Substituted in by site/build.mjs so this
